@@ -126,7 +126,7 @@ async function runSweep() {
   const btn = $('#runBtn');
   const msg = $('#runMsg');
   btn.disabled = true;
-  btn.innerHTML = '<span class="turning"></span> Sweeping the register…';
+  btn.innerHTML = '<span class="turning"></span> Sweeping…';
   msg.className = 'runmsg';
   msg.textContent = '';
 
@@ -167,10 +167,9 @@ async function runSweep() {
     state.lastJob = data.job;
     msg.className = 'runmsg ok';
     msg.textContent = data.idempotent_replay
-      ? 'An earlier, identical enquiry was returned.'
-      : `${data.job.total_input} name(s) considered.`;
+      ? 'An earlier, identical sweep was returned.'
+      : `${data.job.total_input} record(s) checked.`;
     await loadResults(data.job.id);
-    // Carry the eye gently down to the findings.
     document
       .getElementById('findings')
       ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -178,7 +177,7 @@ async function runSweep() {
     msg.className = 'runmsg err';
     msg.textContent = err.message;
   } finally {
-    btn.innerHTML = 'Sweep the register';
+    btn.innerHTML = 'Sweep database';
     refreshRunButton();
   }
 }
@@ -192,12 +191,12 @@ async function loadResults(jobId) {
   renderResults();
 }
 
-// The four summary figures, in register vocabulary.
+// The four summary figures.
 const SUMMARY_FIGURES = [
-  { key: 'total', label: 'considered' },
-  { key: 'duplicate', label: 'already kept' },
-  { key: 'review', label: 'for your eye' },
-  { key: 'new', label: 'newly found' },
+  { key: 'total', label: 'checked' },
+  { key: 'duplicate', label: 'duplicates' },
+  { key: 'review', label: 'review' },
+  { key: 'new', label: 'new leads' },
 ];
 
 function renderResults() {
@@ -235,7 +234,7 @@ function renderResults() {
   fb.querySelector('[data-count="duplicate"]').textContent = c.duplicate;
   fb.querySelector('[data-count="review"]').textContent = c.review;
   fb.querySelector('[data-count="new"]').textContent = c.new;
-  $$('.register-filter').forEach((f) =>
+  $$('.filter').forEach((f) =>
     f.classList.toggle('is-active', f.dataset.filter === state.filter)
   );
 
@@ -245,9 +244,9 @@ function renderResults() {
       : state.results.filter((r) => r.classification === state.filter);
 
   if (!visible.length) {
-    const e = el('div', 'repose');
-    const line = el('p', 'repose-line italic');
-    line.textContent = 'Nothing rests in this category.';
+    const e = el('div', 'empty');
+    const line = el('p', 'empty-title');
+    line.textContent = 'Nothing in this category.';
     e.appendChild(line);
     area.appendChild(e);
     return;
@@ -256,22 +255,22 @@ function renderResults() {
 }
 
 function emptyState() {
-  const d = el('div', 'repose');
+  const d = el('div', 'empty');
   d.id = 'emptyState';
-  const line = el('p', 'repose-line italic');
-  line.textContent = 'No enquiry has yet been made.';
-  const note = el('p', 'aside');
+  const line = el('p', 'empty-title');
+  line.textContent = 'No sweep run yet.';
+  const note = el('p', 'empty-note');
   note.textContent =
-    'Enter your tenant key above, choose a register and its marks, then sweep.';
+    'Connect with your API key, choose a connector and criteria, then sweep.';
   d.append(line, note);
   return d;
 }
 
-// The register's words for each verdict.
+// The label shown for each verdict.
 const VERDICT_WORD = {
-  duplicate: 'Already kept',
-  review: 'For your eye',
-  new: 'Newly found',
+  duplicate: 'Duplicate',
+  review: 'Review',
+  new: 'New lead',
 };
 
 // Build one finding — a register entry. Every value from the server goes
@@ -319,12 +318,12 @@ function resultCard(r) {
       const vals = el('span', 'ev-values');
       const iv = document.createTextNode(String(m.inputValue ?? '—'));
       const arrow = el('span', 'arrow');
-      arrow.textContent = 'answers to';
+      arrow.textContent = '→';
       const mv = el('span', 'match');
       mv.textContent = String(m.matchValue ?? '—');
       vals.append(iv, arrow, mv);
       const sc = el('span', 'ev-score');
-      sc.textContent = Math.round((m.score || 0) * 100) + ' per cent';
+      sc.textContent = Math.round((m.score || 0) * 100) + '%';
       row.append(f, vals, sc);
       ev.appendChild(row);
     }
@@ -337,7 +336,7 @@ function resultCard(r) {
     fill.style.width = Math.round((r.score || 0) * 100) + '%';
     track.appendChild(fill);
     const fig = el('span', 'ev-accord-figure');
-    fig.textContent = 'accord, ' + Math.round((r.score || 0) * 100) + ' per cent';
+    fig.textContent = Math.round((r.score || 0) * 100) + '% match';
     accord.append(track, fig);
     body.appendChild(accord);
   }
@@ -348,12 +347,11 @@ function resultCard(r) {
     if (r.lead_status === 'added') {
       const flag = el('span', 'kept-flag');
       flag.textContent =
-        'Entered into the lead listing' +
-        (r.lead_ref ? ` · ref ${r.lead_ref}` : '');
+        'Added to lead listing' + (r.lead_ref ? ` · ref ${r.lead_ref}` : '');
       act.appendChild(flag);
     } else {
       const btn = el('button', 'link-action');
-      btn.textContent = 'Enter into the lead listing';
+      btn.textContent = 'Add to lead listing';
       btn.addEventListener('click', () => addLead(r.id, btn));
       act.appendChild(btn);
     }
@@ -368,7 +366,7 @@ function resultCard(r) {
 // register's lead listing.
 async function addLead(resultId, btn) {
   btn.disabled = true;
-  btn.innerHTML = '<span class="turning"></span> Entering…';
+  btn.innerHTML = '<span class="turning"></span> Adding…';
   try {
     const data = await api(`/results/${resultId}/add-lead`, { method: 'POST' });
     // Reflect the new state in the in-memory result and re-render.
@@ -380,7 +378,7 @@ async function addLead(resultId, btn) {
     renderResults();
   } catch (err) {
     btn.disabled = false;
-    btn.textContent = 'Enter into the lead listing';
+    btn.textContent = 'Add to lead listing';
     flashError(err.message);
   }
 }
@@ -414,13 +412,11 @@ function init() {
   $('#criteria').addEventListener('change', refreshRunButton);
   $('#connectorSelect').addEventListener('change', refreshRunButton);
 
-  // Input tabs (the ledger tabs).
-  $$('.ledger-tab').forEach((tab) => {
+  // Input tabs.
+  $$('.tab').forEach((tab) => {
     tab.addEventListener('click', () => {
       state.activeTab = tab.dataset.tab;
-      $$('.ledger-tab').forEach((t) =>
-        t.classList.toggle('is-active', t === tab)
-      );
+      $$('.tab').forEach((t) => t.classList.toggle('is-active', t === tab));
       $$('.tabpane').forEach((p) =>
         p.classList.toggle('is-hidden', p.dataset.pane !== state.activeTab)
       );
@@ -429,7 +425,7 @@ function init() {
 
   // Finding filters.
   $('#filterbar').addEventListener('click', (e) => {
-    const f = e.target.closest('.register-filter');
+    const f = e.target.closest('.filter');
     if (!f) return;
     state.filter = f.dataset.filter;
     renderResults();
@@ -471,7 +467,7 @@ function init() {
       e.preventDefault();
       const save = $('#connectorSave');
       save.disabled = true;
-      save.innerHTML = '<span class="turning"></span> Entering…';
+      save.innerHTML = '<span class="turning"></span> Adding…';
       try {
         await registerConnector(e.target);
         dialog.close();
@@ -479,41 +475,12 @@ function init() {
         $('#connectorErr').textContent = err.message;
       } finally {
         save.disabled = false;
-        save.textContent = 'Enter the register';
+        save.textContent = 'Add connector';
       }
     }
   });
 
   refreshRunButton();
-  armReveals();
-}
-
-// v9 motion — sections rise gently into view as the page is read. Mirrors
-// the framer-motion whileInView reveals of the Claritas site. Sections opt
-// in by carrying the `reveal` class; the observer adds `is-shown` once.
-function armReveals() {
-  const targets = $$('.reveal');
-  if (!targets.length) return;
-  // No IntersectionObserver, or motion is unwelcome → just show everything.
-  if (
-    !('IntersectionObserver' in window) ||
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  ) {
-    targets.forEach((t) => t.classList.add('is-shown'));
-    return;
-  }
-  const observer = new IntersectionObserver(
-    (entries) => {
-      for (const entry of entries) {
-        if (entry.isIntersecting) {
-          entry.target.classList.add('is-shown');
-          observer.unobserve(entry.target);
-        }
-      }
-    },
-    { rootMargin: '-80px' }
-  );
-  targets.forEach((t) => observer.observe(t));
 }
 
 document.addEventListener('DOMContentLoaded', init);

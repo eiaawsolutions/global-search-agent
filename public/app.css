@@ -1,32 +1,23 @@
-/* Global Search Agent — console.
-   Design system: Claritas v9 "Linen".
-   Pure white canvas · Cormorant Garamond, light · a single sage thread ·
-   hairline rules, never boxes or shadows · enormous breathing room ·
-   uppercase wide-set labels with ⸻ brackets. Confident through restraint.
-
-   Forbidden, per the v9 charter: gradients, drop shadows, bordered cards,
-   dark surfaces, bold weights, tight spacing, accent colours beyond sage. */
+/* Global Search Agent — console styles.
+   Dark dashboard: near-black canvas, panelled two-column layout, a single
+   teal accent. System UI font, no web fonts, no build step. */
 
 :root {
-  --paper: #ffffff;
-  --ink: #1a1a1a;
-  --sage: #7a8866;
-  --hush: #9a9a9a;
-
-  /* ink at opacity — the only "greys" used, never separate hex */
-  --ink-78: rgba(26, 26, 26, 0.78);
-  --ink-70: rgba(26, 26, 26, 0.7);
-  --ink-65: rgba(26, 26, 26, 0.65);
-  --ink-55: rgba(26, 26, 26, 0.55);
-  --rule: rgba(26, 26, 26, 0.08);
-  --rule-firm: rgba(26, 26, 26, 0.15);
-
-  --serif: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
-
-  /* the three classifications — each a quiet earth tone, sage-adjacent */
-  --kept: #9a9a9a;        /* already kept — receded, it is not news */
-  --eye: #b08d57;         /* for your eye — a warm uncertain ochre */
-  --found: #7a8866;       /* newly found — sage, the colour of growth */
+  --bg: #0c1117;
+  --panel: #11181f;
+  --panel-2: #161f28;
+  --border: #232f3b;
+  --border-soft: #1c2731;
+  --text: #d9e1e8;
+  --text-dim: #8b97a3;
+  --text-faint: #5f6b76;
+  --accent: #14b88a;
+  --accent-dim: #0f8e6a;
+  --accent-soft: rgba(20, 184, 138, 0.12);
+  --danger: #e0604f;
+  --ok: #14b88a;
+  --radius: 8px;
+  --radius-sm: 6px;
 }
 
 * {
@@ -35,788 +26,640 @@
   padding: 0;
 }
 
-html {
-  scroll-behavior: smooth;
+html,
+body {
+  height: 100%;
 }
 
 body {
-  font-family: var(--serif);
-  background: var(--paper);
-  color: var(--ink);
-  font-weight: 300;
-  font-size: 18px;
-  line-height: 1.6;
+  background: var(--bg);
+  color: var(--text);
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial,
+    sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
 }
 
-/* The page is held to a wide editorial measure with generous gutters. */
-.shell {
-  margin: 0 auto;
-  max-width: 1500px;
-  padding-left: 64px;
-  padding-right: 64px;
-  width: 100%;
-}
-
-.hairline {
-  height: 1px;
-  width: 100%;
-  background: var(--rule);
-}
-
-.italic {
-  font-style: italic;
-}
-.accent {
-  color: var(--sage);
-}
-
-/* ── Masthead ─────────────────────────────────────────────────────── */
-.masthead-row {
-  height: 128px;
+/* ── Header ─────────────────────────────────────────────────────── */
+.topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 40px;
+  gap: 24px;
+  padding: 16px 28px;
+  border-bottom: 1px solid var(--border-soft);
 }
 
-.wordmark {
-  font-size: 26px;
-  letter-spacing: 0.18em;
-  font-variant: small-caps;
-  color: var(--ink);
-  text-decoration: none;
-  font-weight: 400;
-  white-space: nowrap;
-}
-.wordmark.small {
-  font-size: 22px;
-}
-
-.masthead-nav {
+.brand {
   display: flex;
-  gap: 48px;
-}
-.masthead-nav-item {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.32em;
-  color: var(--hush);
-}
-.masthead-nav-item.is-current {
-  color: var(--ink);
+  align-items: center;
+  gap: 10px;
 }
 
-/* The tenant-key entry — restyled as an unadorned editorial input. */
+.brand-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: conic-gradient(var(--accent) 0 50%, transparent 50% 100%);
+  border: 1.5px solid var(--accent);
+}
+
+.brand-name {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
 .connect {
   display: flex;
-  align-items: baseline;
-  gap: 16px;
+  align-items: center;
+  gap: 10px;
 }
+
+.connect-label {
+  font-size: 9px;
+  line-height: 1.15;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-faint);
+  text-align: right;
+}
+
 .connect input {
-  font-family: var(--serif);
-  font-size: 15px;
-  font-style: italic;
-  color: var(--ink);
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid var(--rule-firm);
-  padding: 4px 2px;
-  width: 150px;
-  transition: border-color 0.4s ease;
+  width: 240px;
+  padding: 9px 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
 }
+
 .connect input::placeholder {
-  color: var(--hush);
-  font-style: italic;
+  color: var(--text-faint);
 }
+
 .connect input:focus {
   outline: none;
-  border-bottom-color: var(--sage);
+  border-color: var(--accent-dim);
 }
 
-/* A link styled action — the v9 "Enquire" pattern: uppercase, underlined. */
-.link-action {
-  font-family: var(--serif);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.32em;
-  color: var(--ink);
-  background: none;
-  border: none;
-  border-bottom: 1px solid var(--ink);
-  padding: 0 0 2px;
-  cursor: pointer;
-  transition: color 0.3s ease, border-color 0.3s ease;
-}
-.link-action:hover {
-  color: var(--sage);
-  border-color: var(--sage);
-}
-
-/* Connection state — set as small-caps, the colour carrying the meaning. */
 .state {
-  font-size: 11px;
+  font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.24em;
+  letter-spacing: 0.6px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
   white-space: nowrap;
 }
+
 .state-idle {
-  color: var(--hush);
+  color: var(--text-faint);
 }
 .state-ok {
-  color: var(--sage);
+  color: var(--ok);
+  border-color: rgba(20, 184, 138, 0.4);
 }
 .state-err {
-  color: var(--eye);
+  color: var(--danger);
+  border-color: rgba(224, 96, 79, 0.4);
 }
 
-/* ── The shared label — ⸻ bracketed, uppercase, wide, sage ────────── */
-.eyebrow,
-.field-label,
-.leaf-eyebrow {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.4em;
-  color: var(--sage);
-  font-weight: 400;
+/* ── Buttons ────────────────────────────────────────────────────── */
+.btn {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    opacity 0.12s ease;
 }
 
-/* ── Title block ──────────────────────────────────────────────────── */
-.title-block {
-  padding-top: 152px;
-  padding-bottom: 96px;
+.btn-primary {
+  background: var(--accent-dim);
+  color: #ffffff;
+  padding: 9px 18px;
+  border-color: var(--accent-dim);
 }
-.title-block .eyebrow {
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.btn-primary:disabled {
+  background: var(--panel-2);
+  border-color: var(--border);
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+
+.btn-ghost {
+  background: var(--panel-2);
+  color: var(--text-dim);
+  padding: 9px 14px;
+  border-color: var(--border);
+}
+.btn-ghost:hover:not(:disabled) {
+  border-color: var(--accent-dim);
+  color: var(--text);
+}
+
+.btn-block {
   display: block;
-  margin-bottom: 72px;
+  width: 100%;
+  padding: 12px;
+  margin-top: 4px;
 }
 
-.display {
-  font-weight: 300;
-  line-height: 0.92;
-  letter-spacing: -0.025em;
-  font-size: clamp(3.2rem, 7.5vw, 8.4rem);
-}
-.display .line {
-  display: block;
-}
-
-.title-note {
-  margin-top: 88px;
-  display: grid;
-  grid-template-columns: repeat(12, 1fr);
-  gap: 48px;
-}
-.lede {
-  grid-column: 7 / 13;
-  font-size: 20px;
-  line-height: 1.7;
-  color: var(--ink-70);
-}
-
-/* ── Movements (numbered sections) ────────────────────────────────── */
-.movement {
-  padding-top: 112px;
-  padding-bottom: 56px;
-}
-.movement-head {
-  display: grid;
-  grid-template-columns: repeat(12, 1fr);
-  gap: 48px;
-  margin-bottom: 80px;
-}
-.numeral {
-  grid-column: span 3;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.4em;
-  color: var(--sage);
-  padding-top: 18px;
-}
-.heading {
-  grid-column: span 9;
-  font-weight: 300;
-  font-size: clamp(2.4rem, 5vw, 4.4rem);
-  line-height: 1.05;
-  letter-spacing: -0.02em;
-}
-
-/* ── The enquiry (sweep form) ─────────────────────────────────────── */
-.enquiry {
-  display: grid;
-  grid-template-columns: repeat(12, 1fr);
-  gap: 56px 48px;
-}
-.field {
-  grid-column: 4 / 13;
+.btn-app {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 14px;
+  line-height: 1.1;
+  font-size: 12px;
 }
-/* fields align under the heading's 9-col block, leaving the left margin
-   open — the v9 device of an asymmetric, mostly-empty left column. */
+.btn-app .plus {
+  font-size: 15px;
+  font-weight: 600;
+}
 
-.field-line {
+/* ── Layout ─────────────────────────────────────────────────────── */
+.layout {
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  gap: 24px;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 24px 28px 48px;
+  align-items: start;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  padding: 22px;
+}
+
+.panel-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  margin-bottom: 18px;
+}
+
+/* ── Fields ─────────────────────────────────────────────────────── */
+.field {
+  margin-bottom: 22px;
+}
+
+.field-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.field-hint {
+  font-size: 12px;
+  color: var(--text-faint);
+  margin-top: 8px;
+}
+.field-hint-tight {
+  margin-top: -2px;
+  margin-bottom: 10px;
+}
+
+.field-row {
   display: flex;
-  align-items: baseline;
-  gap: 32px;
-  flex-wrap: wrap;
+  gap: 8px;
+  align-items: stretch;
 }
 
-/* An unadorned select — underline only, serif, no chrome. */
-.quiet-select {
-  font-family: var(--serif);
-  font-size: 22px;
-  font-weight: 300;
-  color: var(--ink);
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid var(--rule-firm);
-  padding: 6px 2px;
-  min-width: 320px;
-  cursor: pointer;
-  transition: border-color 0.4s ease;
+.select {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-dim) 50%),
+    linear-gradient(135deg, var(--text-dim) 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) 50%,
+    calc(100% - 13px) 50%;
+  background-size:
+    5px 5px,
+    5px 5px;
+  background-repeat: no-repeat;
 }
-.quiet-select:focus {
+.select:focus {
   outline: none;
-  border-bottom-color: var(--sage);
+  border-color: var(--accent-dim);
 }
 
-/* Criteria — set as a row of quiet word-marks; the chosen ones gain a
-   sage underline. No pills, no fills. */
+/* ── Criteria chips ─────────────────────────────────────────────── */
 .criteria {
   display: flex;
   flex-wrap: wrap;
-  gap: 14px 36px;
-}
-.mark {
-  position: relative;
-  cursor: pointer;
-}
-.mark input {
-  position: absolute;
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-.mark span {
-  font-size: 22px;
-  font-weight: 300;
-  color: var(--hush);
-  padding-bottom: 4px;
-  border-bottom: 1px solid transparent;
-  transition: color 0.3s ease, border-color 0.3s ease;
-}
-.mark input:checked + span {
-  color: var(--ink);
-  border-bottom-color: var(--sage);
-}
-.mark input:focus-visible + span {
-  color: var(--sage);
-}
-.mark:hover span {
-  color: var(--ink-65);
+  gap: 8px;
 }
 
-/* Input tabs — underlined ledger tabs. */
-.ledger-tabs {
-  display: flex;
-  gap: 36px;
-  border-bottom: 1px solid var(--rule);
-  padding-bottom: 2px;
+.chip {
+  cursor: pointer;
+  user-select: none;
 }
-.ledger-tab {
-  font-family: var(--serif);
-  font-size: 14px;
-  font-style: italic;
-  color: var(--hush);
+.chip input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.chip span {
+  display: inline-block;
+  padding: 6px 16px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--text-dim);
+  transition:
+    border-color 0.12s ease,
+    color 0.12s ease,
+    background 0.12s ease;
+}
+.chip input:checked + span {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.chip input:focus-visible + span {
+  outline: 2px solid var(--accent-dim);
+  outline-offset: 1px;
+}
+
+/* ── Tabs ───────────────────────────────────────────────────────── */
+.tabs {
+  display: flex;
+  gap: 18px;
+  border-bottom: 1px solid var(--border-soft);
+  margin-bottom: 14px;
+}
+
+.tab {
   background: none;
   border: none;
-  border-bottom: 1px solid transparent;
-  padding: 0 0 10px;
-  margin-bottom: -3px;
+  border-bottom: 2px solid transparent;
+  color: var(--text-faint);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 6px 0;
+  margin-bottom: -1px;
   cursor: pointer;
-  transition: color 0.3s ease, border-color 0.3s ease;
 }
-.ledger-tab:hover {
-  color: var(--ink-65);
+.tab:hover {
+  color: var(--text-dim);
 }
-.ledger-tab.is-active {
-  color: var(--ink);
-  border-bottom-color: var(--ink);
+.tab.is-active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
 }
-.tabpane {
-  margin-top: 28px;
-}
+
 .tabpane.is-hidden {
   display: none;
 }
 
-/* Textareas — a faint baseline rule, serif, roomy. */
-textarea {
+textarea,
+.dropzone {
   width: 100%;
-  font-family: var(--serif);
-  font-size: 18px;
-  font-weight: 300;
-  line-height: 1.7;
-  color: var(--ink);
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid var(--rule-firm);
-  padding: 8px 2px 16px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 13px;
+}
+
+textarea {
+  padding: 11px 12px;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
   resize: vertical;
-  transition: border-color 0.4s ease;
+  line-height: 1.55;
 }
 textarea::placeholder {
-  color: var(--hush);
+  color: var(--text-faint);
 }
 textarea:focus {
   outline: none;
-  border-bottom-color: var(--sage);
+  border-color: var(--accent-dim);
 }
 
-/* The CSV drop area — a dashed hairline, no fill. */
-.ledger-drop {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  text-align: center;
-  padding: 56px 24px;
-  border: 1px dashed var(--rule-firm);
-  cursor: pointer;
-  color: var(--ink-65);
-  font-size: 18px;
-  transition: border-color 0.4s ease, color 0.4s ease;
-}
-.ledger-drop:hover,
-.ledger-drop.dragover {
-  border-color: var(--sage);
-  color: var(--sage);
-}
-
-/* An aside — small italic, the v9 register's marginal voice. */
-.aside {
-  font-size: 13px;
-  font-style: italic;
-  color: var(--ink-55);
-  line-height: 1.6;
-}
-
-/* ── The seal action — the one filled element, used sparingly ─────── */
-/* Even this is restrained: ink on paper, a thin frame, never a slab. */
-.seal-action {
-  font-family: var(--serif);
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.34em;
-  color: var(--ink);
-  background: transparent;
-  border: 1px solid var(--ink);
-  padding: 18px 44px;
-  cursor: pointer;
-  transition: background 0.4s ease, color 0.4s ease, opacity 0.3s ease;
-}
-.seal-action:hover:not(:disabled) {
-  background: var(--ink);
-  color: var(--paper);
-}
-.seal-action:disabled {
-  border-color: var(--rule-firm);
-  color: var(--hush);
-  cursor: not-allowed;
-}
-.seal-action.small {
-  padding: 13px 30px;
-  letter-spacing: 0.28em;
-}
-
-.enquiry-foot {
-  grid-column: 4 / 13;
-  display: flex;
-  align-items: baseline;
-  gap: 36px;
-  flex-wrap: wrap;
-  margin-top: 16px;
-}
-.runmsg {
-  font-size: 14px;
-  font-style: italic;
-  min-height: 18px;
-  color: var(--ink-55);
-}
-.runmsg.err {
-  color: var(--eye);
-}
-.runmsg.ok {
-  color: var(--sage);
-}
-
-/* ── The findings ─────────────────────────────────────────────────── */
-/* Summary — set as a single quiet line of serif numerals. */
-.summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 56px;
-  margin-bottom: 56px;
-  padding-bottom: 32px;
-  border-bottom: 1px solid var(--rule);
-}
-.summary .s-item {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.summary .s-num {
-  font-size: 56px;
-  font-weight: 300;
-  line-height: 1;
-  color: var(--ink);
-}
-.summary .s-label {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.32em;
-  color: var(--hush);
-}
-
-/* Filters — italic ledger words. */
-.register-filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 36px;
-  margin-bottom: 48px;
-}
-.register-filter {
-  font-family: var(--serif);
-  font-size: 16px;
-  font-style: italic;
-  color: var(--hush);
-  background: none;
-  border: none;
-  border-bottom: 1px solid transparent;
-  padding: 0 0 5px;
-  cursor: pointer;
-  transition: color 0.3s ease, border-color 0.3s ease;
-}
-.register-filter:hover {
-  color: var(--ink-65);
-}
-.register-filter.is-active {
-  color: var(--ink);
-  border-bottom-color: var(--sage);
-}
-.tally {
-  font-size: 11px;
-  font-style: normal;
-  letter-spacing: 0.06em;
-  color: var(--hush);
-  margin-left: 4px;
-}
-.register-filter.is-active .tally {
-  color: var(--sage);
-}
-
-/* ── A finding — one entry in the register ────────────────────────── */
-/* Not a card. An entry, parted from the next by a hairline, breathing. */
-.finding {
-  display: grid;
-  grid-template-columns: repeat(12, 1fr);
-  gap: 24px 48px;
-  padding: 44px 0;
-  border-top: 1px solid var(--rule);
-}
-.finding:last-child {
-  border-bottom: 1px solid var(--rule);
-}
-
-/* The verdict — a small uppercase mark in the left column. */
-.finding-verdict {
-  grid-column: span 3;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.32em;
-  padding-top: 8px;
-}
-.finding-verdict.v-duplicate {
-  color: var(--kept);
-}
-.finding-verdict.v-review {
-  color: var(--eye);
-}
-.finding-verdict.v-new {
-  color: var(--found);
-}
-.finding-verdict .verdict-rule {
-  display: block;
-  width: 28px;
-  height: 1px;
-  margin-bottom: 14px;
-  background: currentColor;
-}
-
-/* The subject and the reasoning occupy the wide right column. */
-.finding-body {
-  grid-column: 4 / 13;
-}
-.finding-name {
-  font-size: 30px;
-  font-weight: 300;
-  line-height: 1.2;
-  color: var(--ink);
-}
-.finding-name .secondary {
-  font-style: italic;
-  color: var(--hush);
-  font-size: 22px;
-}
-.finding-says {
-  margin-top: 10px;
-  font-size: 16px;
-  font-style: italic;
-  color: var(--ink-65);
-  line-height: 1.6;
-}
-
-/* Evidence — the data points that made the verdict, set as a ledger. */
-.evidence {
-  margin-top: 22px;
-  display: flex;
-  flex-direction: column;
-}
-.evidence-row {
-  display: grid;
-  grid-template-columns: 130px 1fr auto;
-  gap: 28px;
-  align-items: baseline;
-  padding: 11px 0;
-  border-top: 1px solid var(--rule);
-}
-.evidence-row:first-child {
-  border-top: none;
-}
-.ev-field {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.28em;
-  color: var(--sage);
-}
-.ev-values {
-  font-size: 16px;
-  color: var(--ink-70);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ev-values .arrow {
-  color: var(--hush);
-  margin: 0 12px;
-  font-style: italic;
-}
-.ev-values .match {
-  color: var(--ink);
-}
-.ev-score {
-  font-size: 16px;
-  font-style: italic;
-  color: var(--ink);
-}
-
-/* Aggregate accord — a single hairline bar, sage fill, very thin. */
-.ev-accord {
-  margin-top: 18px;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-.ev-accord-track {
-  flex: 1;
-  height: 1px;
-  background: var(--rule-firm);
-  position: relative;
-}
-.ev-accord-track > i {
-  position: absolute;
-  left: 0;
-  top: -1px;
-  height: 3px;
-  background: var(--sage);
-}
-.ev-accord-figure {
-  font-size: 13px;
-  font-style: italic;
-  color: var(--hush);
-  white-space: nowrap;
-}
-
-/* The action on a finding — link-styled, never a button slab. */
-.finding-act {
-  margin-top: 24px;
-}
-.kept-flag {
-  font-size: 13px;
-  font-style: italic;
-  color: var(--sage);
-}
-
-/* ── Repose — the empty state ─────────────────────────────────────── */
-.repose {
-  padding: 88px 0;
-  text-align: center;
-}
-.repose-line {
-  font-size: 30px;
-  font-weight: 300;
-  color: var(--ink);
-  margin-bottom: 16px;
-}
-.repose .aside {
-  max-width: 30rem;
-  margin: 0 auto;
-}
-
-/* ── Colophon ─────────────────────────────────────────────────────── */
-.colophon {
-  margin-top: 96px;
-}
-.colophon-row {
-  padding: 72px 64px;
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 40px;
-  flex-wrap: wrap;
-}
-.colophon-note {
-  font-size: 14px;
-  color: var(--ink-55);
-}
-.colophon-mark {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.28em;
-  color: var(--hush);
-}
-
-/* ── The leaf (connector dialog) ──────────────────────────────────── */
-.leaf {
-  border: 1px solid var(--rule-firm);
-  background: var(--paper);
-  color: var(--ink);
-  padding: 0;
-  max-width: 520px;
-  width: 92vw;
-}
-.leaf::backdrop {
-  background: rgba(255, 255, 255, 0.86);
-}
-.leaf form {
-  padding: 48px;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-.leaf-eyebrow {
-  display: block;
-}
-.leaf-title {
-  font-size: 32px;
-  font-weight: 300;
-  line-height: 1.15;
-  letter-spacing: -0.015em;
-  margin-top: 4px;
-}
-.leaf-aside {
-  margin-bottom: 8px;
-}
-.leaf-field {
+.dropzone {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 26px 18px;
+  border-style: dashed;
+  cursor: pointer;
+  color: var(--text-dim);
 }
-.leaf-field > span {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.28em;
-  color: var(--sage);
+.dropzone:hover,
+.dropzone.dragover {
+  border-color: var(--accent-dim);
+  color: var(--text);
 }
-.leaf-field input,
-.leaf-field select {
-  font-family: var(--serif);
-  font-size: 17px;
-  font-weight: 300;
-  color: var(--ink);
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid var(--rule-firm);
-  padding: 6px 2px;
-  transition: border-color 0.4s ease;
+.dropzone .field-hint {
+  margin-top: 2px;
 }
-.leaf-field input::placeholder {
-  color: var(--hush);
-}
-.leaf-field input:focus,
-.leaf-field select:focus {
-  outline: none;
-  border-bottom-color: var(--sage);
-}
-.leaf-pair {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 24px;
-}
-.leaf-error {
-  font-size: 13px;
-  font-style: italic;
-  color: var(--eye);
+
+/* ── Run message ────────────────────────────────────────────────── */
+.runmsg {
+  font-size: 12px;
+  margin-top: 10px;
   min-height: 16px;
 }
-.leaf-actions {
+.runmsg.ok {
+  color: var(--ok);
+}
+.runmsg.err {
+  color: var(--danger);
+}
+
+/* ── Results filters ────────────────────────────────────────────── */
+.filters {
   display: flex;
-  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.filter {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 6px 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.filter:hover {
+  border-color: var(--accent-dim);
+}
+.filter.is-active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.tally {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.filter.is-active .tally {
+  border-color: var(--accent-dim);
+  color: var(--accent);
+}
+
+/* ── Summary ────────────────────────────────────────────────────── */
+.summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.s-item {
+  background: var(--panel-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  text-align: center;
+}
+.s-num {
+  display: block;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text);
+}
+.s-label {
+  display: block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-faint);
+  margin-top: 3px;
+}
+
+/* ── Results body / empty state ─────────────────────────────────── */
+.results-body {
+  min-height: 320px;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-height: 320px;
+  gap: 6px;
+}
+.empty-title {
+  color: var(--text-dim);
+  font-size: 14px;
+}
+.empty-note {
+  color: var(--text-faint);
+  font-size: 12px;
+  max-width: 360px;
+}
+
+/* ── Finding cards ──────────────────────────────────────────────── */
+.finding {
+  display: grid;
+  grid-template-columns: 116px 1fr;
+  gap: 16px;
+  background: var(--panel-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  margin-bottom: 10px;
+}
+
+.finding-verdict {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+.verdict-rule {
+  width: 26px;
+  height: 2px;
+  border-radius: 1px;
+  background: currentColor;
+}
+.v-duplicate {
+  color: var(--danger);
+}
+.v-review {
+  color: #d8a040;
+}
+.v-new {
+  color: var(--accent);
+}
+
+.finding-body {
+  min-width: 0;
+}
+.finding-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.finding-name .secondary {
+  font-weight: 400;
+  color: var(--text-faint);
+}
+.finding-says {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+
+/* Evidence ledger */
+.evidence {
+  margin-top: 10px;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 8px;
+}
+.evidence-row {
+  display: flex;
   align-items: baseline;
-  gap: 28px;
+  gap: 10px;
+  font-size: 12px;
+  padding: 3px 0;
+}
+.ev-field {
+  width: 64px;
+  flex-shrink: 0;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+}
+.ev-values {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-dim);
+}
+.ev-values .arrow {
+  color: var(--text-faint);
+  margin: 0 6px;
+  font-size: 11px;
+}
+.ev-values .match {
+  color: var(--text);
+}
+.ev-score {
+  color: var(--accent);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* Aggregate accord bar */
+.ev-accord {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin-top: 8px;
 }
-
-/* ── Motion — slow, the v9 cadence ────────────────────────────────── */
-/* Sections rise gently into view, mirroring the framer-motion reveals
-   of the Claritas site. Honoured only when motion is welcomed. */
-.reveal {
-  opacity: 0;
-  transform: translateY(28px);
+.ev-accord-track {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
 }
-.reveal.is-shown {
-  opacity: 1;
-  transform: translateY(0);
-  transition: opacity 1.1s cubic-bezier(0.22, 1, 0.36, 1),
-    transform 1.1s cubic-bezier(0.22, 1, 0.36, 1);
+.ev-accord-track i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
 }
-
-/* The title fades in on load without the upward drift. */
-.title-block {
-  animation: linen-fade 1.4s ease both;
-}
-@keyframes linen-fade {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+.ev-accord-figure {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-faint);
+  white-space: nowrap;
 }
 
-/* A quiet mark of work in progress — a slow rotating hairline ring. */
+/* New-lead action */
+.finding-act {
+  margin-top: 12px;
+}
+.kept-flag {
+  font-size: 12px;
+  color: var(--accent);
+}
+.link-action {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+}
+.link-action:hover {
+  text-decoration: underline;
+}
+.link-action:disabled {
+  color: var(--text-faint);
+  cursor: default;
+  text-decoration: none;
+}
+
+/* ── Spinner ────────────────────────────────────────────────────── */
 .turning {
   display: inline-block;
-  width: 12px;
-  height: 12px;
-  vertical-align: -1px;
-  border: 1px solid var(--rule-firm);
-  border-top-color: var(--sage);
+  width: 11px;
+  height: 11px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
   border-radius: 50%;
-  animation: turn 0.9s linear infinite;
+  vertical-align: -1px;
+  animation: turn 0.7s linear infinite;
 }
 @keyframes turn {
   to {
@@ -824,101 +667,88 @@ textarea:focus {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
-  }
-  .reveal,
-  .reveal.is-shown {
-    opacity: 1;
-    transform: none;
-    transition: none;
-  }
-  .title-block {
-    animation: none;
-  }
-  .turning {
-    animation: none;
-  }
+/* ── Connector dialog ───────────────────────────────────────────── */
+.modal {
+  width: 460px;
+  max-width: calc(100vw - 32px);
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+}
+.modal::backdrop {
+  background: rgba(4, 7, 10, 0.7);
+}
+.modal-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.modal-hint {
+  margin-bottom: 16px;
+}
+.modal-field {
+  display: block;
+  margin-bottom: 12px;
+}
+.modal-field span {
+  display: block;
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 5px;
+}
+.modal-field input,
+.modal-field select {
+  width: 100%;
+  padding: 8px 11px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+}
+.modal-field input:focus,
+.modal-field select:focus {
+  outline: none;
+  border-color: var(--accent-dim);
+}
+.modal-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.modal-error {
+  color: var(--danger);
+  font-size: 12px;
+  min-height: 16px;
+  margin: 4px 0 8px;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
 }
 
-/* ── Narrow viewports ─────────────────────────────────────────────── */
-@media (max-width: 1080px) {
-  .shell {
-    padding-left: 40px;
-    padding-right: 40px;
+/* ── Responsive ─────────────────────────────────────────────────── */
+@media (max-width: 880px) {
+  .layout {
+    grid-template-columns: 1fr;
   }
-  .colophon-row {
-    padding-left: 40px;
-    padding-right: 40px;
-  }
-  .lede,
-  .field,
-  .enquiry-foot,
-  .finding-body {
-    grid-column: 1 / 13;
-  }
-  .finding-verdict {
-    grid-column: 1 / 13;
-  }
-  .numeral {
-    grid-column: 1 / 13;
-    padding-top: 0;
-  }
-  .heading {
-    grid-column: 1 / 13;
-    margin-top: 12px;
-  }
-}
-
-@media (max-width: 720px) {
-  body {
-    font-size: 17px;
-  }
-  .shell {
-    padding-left: 24px;
-    padding-right: 24px;
-  }
-  .colophon-row {
-    padding: 56px 24px;
-  }
-  .masthead-row {
-    height: auto;
-    padding-top: 24px;
-    padding-bottom: 24px;
+  .topbar {
     flex-wrap: wrap;
-    gap: 20px;
-  }
-  .masthead-nav {
-    display: none;
-  }
-  .title-block {
-    padding-top: 80px;
-  }
-  .title-block .eyebrow {
-    margin-bottom: 44px;
-  }
-  .movement {
-    padding-top: 72px;
-  }
-  .movement-head {
-    margin-bottom: 48px;
-  }
-  .enquiry {
-    gap: 44px 0;
-  }
-  .quiet-select {
-    min-width: 100%;
-  }
-  .evidence-row {
-    grid-template-columns: 100px 1fr auto;
     gap: 14px;
   }
-  .leaf form {
-    padding: 32px;
+  .connect input {
+    width: 180px;
   }
-  .leaf-pair {
+  .summary {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .finding {
     grid-template-columns: 1fr;
-    gap: 18px;
+    gap: 10px;
   }
 }

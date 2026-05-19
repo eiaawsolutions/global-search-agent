@@ -115,6 +115,22 @@ test('TOTP — otpauth URI carries the secret and issuer', () => {
   assert.ok(uri.includes('issuer=GSA+Test'), 'embeds the issuer');
 });
 
+test('TOTP — qrSvg renders the otpauth URI as a valid SVG QR', async () => {
+  // The QR is generated server-side by the `qrcode` library (a hand-written
+  // encoder shipped earlier produced a QR that rendered but did not decode
+  // in real scanners — this guards the move to the proven library).
+  const secret = totp.generateSecret();
+  const uri = totp.otpauthUri(secret, { label: 'admin', issuer: 'GSA Test' });
+  const svg = await totp.qrSvg(uri);
+  assert.equal(typeof svg, 'string', 'returns a string');
+  assert.ok(svg.startsWith('<svg'), 'is an SVG element');
+  assert.ok(svg.includes('</svg>'), 'is a complete SVG');
+  // A QR for a ~140-char URI is a non-trivial matrix — a near-empty SVG
+  // would mean the encoder silently produced nothing.
+  assert.ok(svg.length > 500, 'SVG carries real QR geometry');
+  assert.ok(/<path|<rect/.test(svg), 'SVG draws QR modules');
+});
+
 test('admin DB ops — create, look up, enroll, password change', () => {
   const { admins, uuid } = dbmod;
   const id = uuid();
@@ -358,13 +374,20 @@ test('HTTP — admin setup, 2FA login, and the no-key console proxy', async (t) 
       assert.equal(res.status, 400);
     });
 
-    await t.test('setup creates the admin and returns a 2FA secret', async () => {
+    await t.test('setup creates the admin and returns a 2FA secret + QR', async () => {
       const res = await request('POST', '/api/admin/setup', {
         body: { username: 'httpadmin', password: 'a-strong-password-1' },
       });
       assert.equal(res.status, 201);
       assert.ok(res.body.otpauth_uri?.startsWith('otpauth://'));
       assert.ok(res.body.manual_key, 'returns the manual key');
+      // The server renders the QR — the client must NOT have to (CSP).
+      assert.ok(
+        typeof res.body.qr_svg === 'string' &&
+          res.body.qr_svg.startsWith('<svg') &&
+          res.body.qr_svg.length > 500,
+        'returns a server-rendered SVG QR'
+      );
       totpSecret = res.body.manual_key;
       adminCookie = cookieFrom(res);
       assert.ok(adminCookie, 'a session cookie is set');

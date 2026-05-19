@@ -1,16 +1,24 @@
 // TOTP — time-based one-time passwords (RFC 6238) for admin 2FA.
 //
-// Dependency-free: built entirely on Node's crypto.createHmac. This is the
-// same algorithm Google Authenticator / Authy / 1Password / Microsoft
+// The TOTP algorithm itself is built on Node's crypto.createHmac — the same
+// algorithm Google Authenticator / Authy / 1Password / Microsoft
 // Authenticator implement, so an admin can enroll with any of them.
+//
+// The QR code is rendered SERVER-SIDE with the `qrcode` package and shipped
+// to the browser as an inline SVG string. An earlier hand-written QR encoder
+// produced a matrix that rendered but did NOT decode in real scanners;
+// `qrcode` is a battle-tested implementation, and generating server-side
+// keeps the page's strict CSP (script-src 'self') intact — the browser only
+// has to drop the SVG into the DOM, no QR library runs client-side.
 //
 // The flow:
 //   1. generateSecret()  → a fresh base32 secret (stored AES-256-GCM encrypted)
-//   2. otpauthUri()      → an otpauth:// URI; the Settings page renders it as a
-//                          QR code the admin scans into their authenticator
-//   3. verify(secret, code) → checks a 6-digit code, with a ±1 step window so a
+//   2. otpauthUri()      → the otpauth:// URI an authenticator app imports
+//   3. qrSvg()           → that URI rendered as a scannable QR (SVG string)
+//   4. verify(secret, code) → checks a 6-digit code, with a ±1 step window so a
 //                          small clock skew between phone and server still works
 import crypto from 'node:crypto';
+import QRCode from 'qrcode';
 
 // RFC 4648 base32 alphabet (authenticator apps expect this, no padding).
 const B32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -129,4 +137,19 @@ export function otpauthUri(base32Secret, { label, issuer }) {
     period: String(STEP_SECONDS),
   });
   return `otpauth://totp/${safeIssuer}:${safeLabel}?${params.toString()}`;
+}
+
+// Render an otpauth:// URI as a scannable QR code, returned as an SVG string.
+// The Settings page injects this SVG inline (no client-side QR library, so
+// the strict CSP is untouched). Error-correction level M is the standard
+// for TOTP QRs — comfortable margin without an oversized symbol. A 4-module
+// quiet zone is included as the QR spec requires for reliable scanning.
+export async function qrSvg(otpauthURI) {
+  return QRCode.toString(otpauthURI, {
+    type: 'svg',
+    errorCorrectionLevel: 'M',
+    margin: 4,
+    width: 220,
+    color: { dark: '#000000', light: '#ffffff' },
+  });
 }

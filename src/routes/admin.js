@@ -144,6 +144,23 @@ function passwordProblem(pw) {
   return null;
 }
 
+// Build the 2FA-enrollment fields for a setup / first-login response: the
+// otpauth URI, a server-rendered scannable QR (SVG), and the base32 secret
+// for manual entry. The QR is generated here (server-side) so the browser
+// just displays an inline SVG — no client-side QR library, CSP untouched.
+async function enrollmentPayload(secret, username) {
+  const uri = totp.otpauthUri(secret, {
+    label: username,
+    issuer: 'Global Search Agent',
+  });
+  return {
+    otpauth_uri: uri,
+    qr_svg: await totp.qrSvg(uri),
+    // The base32 secret, for manual entry if the admin cannot scan the QR.
+    manual_key: secret,
+  };
+}
+
 // ── GET /api/admin/state — which screen the client should show ───────
 // Unauthenticated by design: the client calls this before any login UI so
 // it knows whether to render first-run setup, the login form, or (if a
@@ -194,13 +211,8 @@ router.post(
     issueSession(res, admin.id, 'pending2fa');
     res.status(201).json({
       ok: true,
-      // The otpauth URI for the QR. Shown ONCE, during enrollment only.
-      otpauth_uri: totp.otpauthUri(secret, {
-        label: username,
-        issuer: 'Global Search Agent',
-      }),
-      // The base32 secret for manual entry if the admin cannot scan the QR.
-      manual_key: secret,
+      // otpauth URI + scannable QR + manual key — shown ONCE, at enrollment.
+      ...(await enrollmentPayload(secret, username)),
     });
   })
 );
@@ -290,11 +302,7 @@ router.post(
       return res.json({
         ok: true,
         stage: 'enroll',
-        otpauth_uri: totp.otpauthUri(secret, {
-          label: admin.username,
-          issuer: 'Global Search Agent',
-        }),
-        manual_key: secret,
+        ...(await enrollmentPayload(secret, admin.username)),
       });
     }
 

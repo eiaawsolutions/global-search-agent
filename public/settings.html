@@ -128,9 +128,20 @@
         border-radius: var(--radius-sm);
         padding: 10px;
         line-height: 0;
+        width: 200px;
+        height: 200px;
       }
-      .qr-box canvas {
+      /* The server-rendered QR is an inline <svg>; size it to the box. */
+      .qr-box svg {
         display: block;
+        width: 100%;
+        height: 100%;
+      }
+      .qr-box.is-empty {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--panel-2);
       }
       .enroll-side {
         min-width: 0;
@@ -402,9 +413,9 @@
             6-digit code it shows.
           </p>
           <div class="enroll-grid">
-            <div class="qr-box">
-              <canvas id="enrollQr" width="200" height="200"></canvas>
-            </div>
+            <!-- The QR is a server-rendered SVG injected here by settings.js;
+                 no client-side QR library runs (keeps the strict CSP). -->
+            <div class="qr-box" id="enrollQr"></div>
             <div class="enroll-side">
               <ol class="enroll-steps">
                 <li>Open your authenticator app.</li>
@@ -554,7 +565,6 @@
       </div>
     </div>
 
-    <script src="/qr.js" defer></script>
     <script src="/settings.js" defer></script>
   </body>
 </html>

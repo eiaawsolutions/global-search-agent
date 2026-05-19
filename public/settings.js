@@ -53,19 +53,24 @@ async function adminApi(path, { method = 'GET', body } = {}) {
 }
 
 // ── TOTP enrollment QR ──────────────────────────────────────────────
-// Render the otpauth:// URI as a scannable QR and show the manual key.
-// The QR is drawn entirely in first-party JS (qr.js) — no external library,
-// so the page's strict Content-Security-Policy is preserved.
-function renderEnrollment(canvasId, keyId, otpauthUri, manualKey) {
-  const canvas = $('#' + canvasId);
-  try {
-    window.QR.draw(canvas, otpauthUri, 200);
-  } catch (err) {
-    // A QR failure must not block enrollment — the manual key still works.
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+// Render the 2FA enrollment screen from a /setup or /login response. The QR
+// is generated SERVER-SIDE (the `qrcode` library) and arrives as an SVG
+// string in `data.qr_svg`; the browser only drops that static SVG into the
+// DOM — no client-side QR library, so the strict CSP (script-src 'self')
+// stays intact. The SVG is server-generated, contains only <path>/<rect>
+// geometry (no scripts, no user-controlled attributes), so assigning it as
+// innerHTML is safe. `data.manual_key` is shown for manual entry.
+function renderEnrollment(data) {
+  const box = $('#enrollQr');
+  if (data && data.qr_svg) {
+    box.classList.remove('is-empty');
+    box.innerHTML = data.qr_svg; // trusted, server-rendered static SVG
+  } else {
+    // No QR — never block enrollment; the manual key below still works.
+    box.classList.add('is-empty');
+    box.textContent = 'Use the setup key →';
   }
-  $('#' + keyId).textContent = manualKey || '';
+  $('#enrollKey').textContent = (data && data.manual_key) || '';
 }
 
 // ── Bootstrap — decide which screen to show ─────────────────────────
@@ -137,8 +142,8 @@ $('#setupForm').addEventListener('submit', async (e) => {
       method: 'POST',
       body: { username, password },
     });
-    // Move straight into 2FA enrollment with the returned secret.
-    renderEnrollment('enrollQr', 'enrollKey', data.otpauth_uri, data.manual_key);
+    // Move straight into 2FA enrollment with the returned QR + secret.
+    renderEnrollment(data);
     enrollMode = 'setup';
     setMsg('enrollMsg', '', '');
     showView('enroll');
@@ -167,12 +172,7 @@ $('#loginForm').addEventListener('submit', async (e) => {
     e.target.reset();
     if (data.stage === 'enroll') {
       // An env-seeded admin signing in for the first time — enroll 2FA now.
-      renderEnrollment(
-        'enrollQr',
-        'enrollKey',
-        data.otpauth_uri,
-        data.manual_key
-      );
+      renderEnrollment(data);
       enrollMode = 'login';
       setMsg('enrollMsg', '', '');
       showView('enroll');

@@ -370,6 +370,27 @@ test('HTTP — admin setup, 2FA login, and the no-key console proxy', async (t) 
       assert.ok(adminCookie, 'a session cookie is set');
     });
 
+    await t.test('the session cookie is HttpOnly and SameSite=Lax', async () => {
+      // Regression guard. The cookie MUST be SameSite=Lax, not Strict:
+      // login is two same-origin fetch() steps (password then 2FA) and
+      // SameSite=Strict can withhold a freshly-set cookie from the second
+      // fetch when the page was reached by a top-level navigation — which
+      // silently breaks 2FA. It must also be HttpOnly so JS/XSS cannot read
+      // the token. (Secure is asserted only indirectly — it is off in this
+      // dev-mode test so the cookie works over plain HTTP.)
+      const res = await request('POST', '/api/admin/login', {
+        body: { username: 'httpadmin', password: 'a-strong-password-1' },
+      });
+      const sc = (res.headers['set-cookie'] || []).join('; ');
+      assert.match(sc, /gsa_admin=/, 'login sets the session cookie');
+      assert.match(sc, /HttpOnly/i, 'cookie is HttpOnly');
+      assert.match(sc, /SameSite=Lax/i, 'cookie is SameSite=Lax (not Strict)');
+      assert.ok(
+        !/SameSite=Strict/i.test(sc),
+        'cookie is NOT SameSite=Strict — that breaks the 2FA fetch step'
+      );
+    });
+
     await t.test('a pending2fa session cannot yet reach Settings', async () => {
       // The password step is done but 2FA is not — /session must still 401.
       const res = await request('GET', '/api/admin/session', {

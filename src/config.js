@@ -74,10 +74,10 @@ export const config = {
   adminMaxFailedLogins: parseInt(process.env.ADMIN_MAX_FAILED_LOGINS || '5', 10),
   adminLockMinutes: parseInt(process.env.ADMIN_LOCK_MINUTES || '15', 10),
 
-  // A tighter per-IP rate limit specifically for the admin auth endpoints
-  // (/api/admin/*) — login, 2FA, setup. Lower than the general API limit
-  // because these are guessing targets. Counts every admin request, so keep
-  // it comfortably above the handful a real login round-trip needs.
+  // A tighter per-IP rate limit for the SENSITIVE admin endpoints — login,
+  // 2FA, setup, enroll, password change. Read-only status polls (/state,
+  // /session) and /logout are not counted (see server.js), so this only
+  // governs credential-bearing POSTs and can stay low to blunt guessing.
   adminAuthRateLimitPerMin: parseInt(
     process.env.ADMIN_AUTH_RATE_LIMIT_PER_MIN || '30',
     10

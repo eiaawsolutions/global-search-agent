@@ -32,6 +32,16 @@ migrate({ silent: false });
 const app = express();
 app.disable('x-powered-by'); // no framework fingerprinting
 
+// Trust the single hop of reverse proxy in front of the app (Railway, Cloud
+// Run, and most PaaS terminate TLS at their edge and forward over HTTP with
+// X-Forwarded-* headers). With this set, req.ip is the real client IP — so
+// the per-IP rate limiters bucket per visitor instead of lumping everyone
+// behind the proxy's single address — and req.secure / req.protocol reflect
+// the original HTTPS request. `1` = trust exactly one proxy hop, which is
+// what these platforms place in front; it does not blindly trust an
+// arbitrarily long X-Forwarded-For chain.
+app.set('trust proxy', 1);
+
 // ── Security headers ─────────────────────────────────────────────────
 app.use(
   helmet({
@@ -116,14 +126,33 @@ const apiLimiter = rateLimit({
 //
 // A dedicated, tighter rate limiter — keyed by client IP — blunts password
 // and TOTP guessing at the network layer, on top of the per-account lockout
-// inside the routes. Stricter than the general API limit.
+// inside the routes.
+//
+// It applies ONLY to the credential-bearing actions (login, 2FA, setup,
+// enroll, password change). The read-only status endpoints the Settings UI
+// polls — /state, /session, /tenant-key (GET) — and /logout are skipped:
+// they are not guessing surfaces, and counting them used to starve the
+// legitimate enrollment flow (state → login → enroll → session is several
+// requests before the user has even mistyped anything). `trust proxy` above
+// makes the IP key the real client, so one visitor's retries cannot exhaust
+// another's budget.
+const ADMIN_LIMITED_PATHS = new Set([
+  '/login',
+  '/verify-2fa',
+  '/enroll',
+  '/setup',
+  '/setup/verify',
+  '/password',
+]);
 const adminLimiter = rateLimit({
   windowMs: 60_000,
   limit: config.adminAuthRateLimitPerMin,
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req) => `ip:${ipKeyGenerator(req.ip)}`,
-  message: { error: 'Too many requests. Slow down.' },
+  // Only count the sensitive POSTs; let status polls / logout through freely.
+  skip: (req) => !ADMIN_LIMITED_PATHS.has(req.path),
+  message: { error: 'Too many sign-in attempts. Wait a minute and retry.' },
 });
 app.use('/api/admin', adminLimiter, adminRoutes);
 

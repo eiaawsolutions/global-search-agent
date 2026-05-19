@@ -59,6 +59,25 @@ const router = Router();
 const GENERIC_AUTH_FAIL = 'Incorrect username, password, or verification code.';
 
 // ── Cookie + session helpers ─────────────────────────────────────────
+// Shared cookie attributes — used identically when setting and clearing the
+// cookie (a mismatch would make clearCookie a no-op).
+//
+// sameSite: 'lax' (not 'strict'). The login flow is two same-origin fetch()
+// steps — the password POST sets the cookie, the very next 2FA POST must
+// send it back. Under SameSite=Strict a browser can withhold a freshly-set
+// cookie from a subsequent fetch() that follows a top-level navigation into
+// the page (typing the /settings URL, a bookmark, a link from the console),
+// which silently breaks the 2FA step. Lax still blocks the CSRF vector that
+// matters here — a cross-site POST cannot carry the cookie — so it is the
+// correct, standard choice for a session cookie. httpOnly still stops any
+// XSS token theft; secure still pins it to HTTPS in production.
+const COOKIE_OPTS = {
+  httpOnly: true,
+  sameSite: 'lax',
+  secure: config.isProd,
+  path: '/',
+};
+
 // Issue a session and set its cookie. `stage` is 'pending2fa' (password done,
 // awaiting the code) or 'full' (fully authenticated).
 function issueSession(res, adminId, stage) {
@@ -74,21 +93,13 @@ function issueSession(res, adminId, stage) {
     expiresAt,
   });
   res.cookie(ADMIN_COOKIE, token, {
-    httpOnly: true,                 // unreadable from JS — no XSS token theft
-    sameSite: 'strict',             // not sent on cross-site requests — CSRF guard
-    secure: config.isProd,          // HTTPS-only in production
+    ...COOKIE_OPTS,
     maxAge: config.adminSessionHours * 3600 * 1000,
-    path: '/',
   });
 }
 
 function clearSessionCookie(res) {
-  res.clearCookie(ADMIN_COOKIE, {
-    httpOnly: true,
-    sameSite: 'strict',
-    secure: config.isProd,
-    path: '/',
-  });
+  res.clearCookie(ADMIN_COOKIE, { ...COOKIE_OPTS });
 }
 
 // Read the raw cookie token + its session row regardless of stage. Used by
@@ -262,12 +273,19 @@ router.post(
     }
 
     // Password correct. If the admin has never enrolled 2FA (an admin seeded
-    // from env), the client must enroll now — return the QR and a pending
-    // session. Otherwise issue a pending2fa session and ask for the code.
+    // from env, or a setup that did not finish the code step), the client
+    // must enroll now — return the QR and a pending session. Otherwise issue
+    // a pending2fa session and ask for the code.
     if (!admin.totp_enrolled) {
-      // Generate (or refresh) the secret for enrollment.
-      const secret = totp.generateSecret();
-      admins.setTotpSecret(admin.id, encrypt(secret));
+      // Reuse an already-stored (un-enrolled) secret if there is one, so a QR
+      // the admin scanned on an earlier attempt stays valid across a reload
+      // or retry. Only mint a fresh secret when none exists yet — otherwise
+      // every login would invalidate the code on the admin's phone.
+      let secret = decrypt(admin.totp_secret_enc);
+      if (!secret) {
+        secret = totp.generateSecret();
+        admins.setTotpSecret(admin.id, encrypt(secret));
+      }
       issueSession(res, admin.id, 'pending2fa');
       return res.json({
         ok: true,

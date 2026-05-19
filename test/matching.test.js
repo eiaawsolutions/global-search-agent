@@ -69,15 +69,67 @@ test('phone match survives a missing country code', () => {
   assert.equal(verdict.classification, 'duplicate');
 });
 
-test('a single fuzzy name signal lands in REVIEW, not duplicate', () => {
-  // One moderately-fuzzy field and nothing else is ambiguous: it could be the
-  // same person, or two different people with similar names. The engine must
-  // flag it for a human rather than auto-deciding.
+test('name matching is EXACT — a near-miss spelling is NEW, not a match', () => {
+  // Name matching requires 100% identical normalized spelling. A similar but
+  // not-identical name is a different person until proven otherwise — it
+  // produces NO match and NO evidence (not even "review").
   const input = rec({ name: 'Jonathan Smithe' });
   const candidates = [rec({ name: 'Jon Smith' })];
   const verdict = classifyInput(input, candidates, ['name', 'email']);
+  assert.equal(verdict.classification, 'new');
+  assert.equal(verdict.score, 0);
+});
+
+test('name matching does NOT match on letter-level overlap', () => {
+  // Regression for the production bug: "Hui Ng" was matching "chung" at 82%
+  // because the matcher used Jaro-Winkler letter similarity. Exact matching
+  // means these share no canonical form → score 0 → NEW.
+  const input = rec({ name: 'Hui Ng' });
+  const candidates = [
+    rec({ name: 'chung' }),
+    rec({ name: 'Kai Tan' }),
+  ];
+  const verdict = classifyInput(input, candidates, ['name']);
+  assert.equal(verdict.classification, 'new');
+  assert.equal(verdict.score, 0);
+});
+
+test('name matching is order-sensitive — reversed words do NOT match', () => {
+  // "Jane Doe" and "Doe Jane" are treated as different names. Exact + ordered.
+  const input = rec({ name: 'Jane Doe' });
+  const candidates = [rec({ name: 'Doe Jane' })];
+  const verdict = classifyInput(input, candidates, ['name']);
+  assert.equal(verdict.classification, 'new');
+});
+
+test('a partial name is NOT a match — every word must be present', () => {
+  // "John Smith" vs "John Michael Smith" — the middle name makes them
+  // different records. No subset/containment matching for names.
+  const input = rec({ name: 'John Smith' });
+  const candidates = [rec({ name: 'John Michael Smith' })];
+  const verdict = classifyInput(input, candidates, ['name']);
+  assert.equal(verdict.classification, 'new');
+});
+
+test('an identical name (one field, no corroboration) lands in REVIEW', () => {
+  // An exact full-name match is real evidence — but a name is not a unique
+  // identifier, so on its own it is capped at "review" for a human to decide,
+  // never auto-merged to "duplicate".
+  const input = rec({ name: 'Jane Doe' });
+  const candidates = [rec({ name: 'Jane Doe' })];
+  const verdict = classifyInput(input, candidates, ['name']);
   assert.equal(verdict.classification, 'review');
-  assert.ok(verdict.score >= 0.6 && verdict.score < 0.85);
+  assert.equal(verdict.score, 1);
+});
+
+test('honorifics still normalize away before the exact comparison', () => {
+  // Exact matching operates on the NORMALIZED form, so "Dr. Jane Doe" and
+  // "Jane Doe" still converge — that is canonicalization, not fuzzy matching.
+  const input = rec({ name: 'Dr. Jane Doe' });
+  const candidates = [rec({ name: 'Jane Doe' })];
+  const verdict = classifyInput(input, candidates, ['name']);
+  assert.equal(verdict.classification, 'review');
+  assert.equal(verdict.score, 1);
 });
 
 test('matching company suffixes are normalized away (Trading/Sdn Bhd)', () => {
@@ -111,11 +163,10 @@ test('criteria selection is honored — unselected fields do not match', () => {
   assert.equal(verdict.classification, 'new');
 });
 
-test('confidence guard: a lone fuzzy name cannot auto-declare a duplicate', () => {
-  // "Ahmed Ismaill" vs "Ahmad Ismail" scores very high as a string, but a
-  // name is not a unique identifier and there is no corroborating field —
-  // the guard must cap this at "review", never "duplicate".
-  const input = rec({ name: 'Ahmed Ismaill' });
+test('confidence guard: an identical name alone cannot auto-declare a duplicate', () => {
+  // Even an EXACT name match is not a unique identifier — with no
+  // corroborating field the verdict is capped at "review", never "duplicate".
+  const input = rec({ name: 'Ahmad Ismail' });
   const candidates = [rec({ name: 'Ahmad Ismail', email: 'ahmad@globex.com' })];
   const verdict = classifyInput(input, candidates, ['name', 'email', 'phone']);
   assert.equal(verdict.classification, 'review');

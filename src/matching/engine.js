@@ -69,12 +69,14 @@ function matchPhone(a, b) {
 
 function matchName(a, b) {
   if (!a.name || !b.name) return 0;
-  // Best of: order-insensitive fuzzy (token-sort) and subset containment
-  // (handles middle names / partial names). Containment is discounted
-  // slightly so a full match always outranks a partial one.
-  const sorted = tokenSortRatio(a.name, b.name);
-  const contained = tokenContainment(a.name, b.name) * 0.92;
-  return Math.max(sorted, contained);
+  // EXACT name matching only — no fuzzy, no token-sort, no containment.
+  // The normalized name (lowercased, accent-stripped, honorifics removed,
+  // whitespace-collapsed) must be IDENTICAL word-for-word in the SAME order.
+  // A name is not a unique identifier and letter-level overlap ("Hui Ng" vs
+  // "chung") produced false positives; a partial name ("John Smith" vs
+  // "John Michael Smith") is a different person until proven otherwise.
+  // So: 1 if the two names are literally the same string, else 0.
+  return a.name === b.name ? 1 : 0;
 }
 
 function matchCompany(a, b) {
@@ -168,9 +170,19 @@ export function classifyInput(input, candidates, criteria) {
     if (best.aggregate >= 1) break;
   }
 
+  // A confirmed strong-identifier hit (exact email or phone) is, on its own,
+  // sufficient evidence of a duplicate. The weighted aggregate can be dragged
+  // BELOW the duplicate threshold by a non-matching low-weight attribute
+  // (e.g. a confirmed email pair where one side abbreviates the name) — a
+  // fuzzy attribute must never veto a confirmed unique identifier. Floor the
+  // effective score at the duplicate threshold whenever a strong id matched.
+  const effectiveScore = best.strongIdMatch
+    ? Math.max(best.aggregate, THRESHOLDS.duplicate)
+    : best.aggregate;
+
   let classification = 'new';
-  if (best.aggregate >= THRESHOLDS.duplicate) classification = 'duplicate';
-  else if (best.aggregate >= THRESHOLDS.review) classification = 'review';
+  if (effectiveScore >= THRESHOLDS.duplicate) classification = 'duplicate';
+  else if (effectiveScore >= THRESHOLDS.review) classification = 'review';
 
   // Confidence guard. A high aggregate driven by a SINGLE fuzzy attribute
   // (a similar name and nothing else) is not enough to auto-declare a
@@ -194,7 +206,7 @@ export function classifyInput(input, candidates, criteria) {
   if (classification === 'new') {
     return {
       classification,
-      score: best.aggregate,
+      score: effectiveScore,
       matchedRecord: null,
       matchedOn: [],
     };
@@ -202,7 +214,7 @@ export function classifyInput(input, candidates, criteria) {
 
   return {
     classification,
-    score: best.aggregate,
+    score: effectiveScore,
     matchedRecord: bestCandidate
       ? bestCandidate.raw || bestCandidate.norm
       : null,

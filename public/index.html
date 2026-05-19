@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Global Search Agent · Claritas</title>
+    <!-- Cormorant Garamond — the Claritas display face (v9 Linen) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body>
+    <!-- ── Masthead ──────────────────────────────────────────────── -->
+    <header class="masthead">
+      <div class="shell masthead-row">
+        <a href="/" class="wordmark">Claritas</a>
+        <nav class="masthead-nav">
+          <span class="masthead-nav-item is-current">The Register</span>
+        </nav>
+        <div class="connect">
+          <input
+            id="apiKey"
+            type="password"
+            placeholder="Tenant key"
+            autocomplete="off"
+            spellcheck="false"
+            aria-label="Tenant API key"
+          />
+          <button id="saveKey" class="link-action">Enter</button>
+          <span id="keyStatus" class="state state-idle">not connected</span>
+        </div>
+      </div>
+      <div class="hairline"></div>
+    </header>
+
+    <main>
+      <!-- ── Title ───────────────────────────────────────────────── -->
+      <section class="title-block shell">
+        <p class="eyebrow">⸻&nbsp;&nbsp;The Global Search Agent&nbsp;&nbsp;⸻</p>
+        <h1 class="display">
+          <span class="line">A quiet</span>
+          <span class="line italic accent">instrument</span>
+          <span class="line">for finding</span>
+          <span class="line italic">what is already known.</span>
+        </h1>
+        <div class="title-note">
+          <p class="lede">
+            Give the agent a list of names, a spreadsheet, or a record set.
+            It sweeps a connected register, sets aside the souls already
+            kept, weighs the uncertain ones for your eye, and presents the
+            genuinely new — each ready to be entered, by your hand, into the
+            lead listing.
+          </p>
+        </div>
+      </section>
+
+      <!-- ── The composition (run a sweep) ───────────────────────── -->
+      <section class="movement shell reveal">
+        <div class="movement-head">
+          <p class="numeral">I.</p>
+          <h2 class="heading">The enquiry</h2>
+        </div>
+
+        <div class="enquiry">
+          <!-- Connected register -->
+          <div class="field">
+            <p class="field-label">⸻&nbsp;&nbsp;The register to be swept&nbsp;&nbsp;⸻</p>
+            <div class="field-line">
+              <select id="connectorSelect" class="quiet-select"></select>
+              <button id="newConnectorBtn" class="link-action">
+                Name a new register
+              </button>
+            </div>
+          </div>
+
+          <!-- Criteria -->
+          <div class="field">
+            <p class="field-label">⸻&nbsp;&nbsp;By what marks shall a soul be known&nbsp;&nbsp;⸻</p>
+            <div class="criteria" id="criteria">
+              <label class="mark"><input type="checkbox" value="email" checked /><span>Email</span></label>
+              <label class="mark"><input type="checkbox" value="phone" checked /><span>Telephone</span></label>
+              <label class="mark"><input type="checkbox" value="name" checked /><span>Name</span></label>
+              <label class="mark"><input type="checkbox" value="company" /><span>House</span></label>
+              <label class="mark"><input type="checkbox" value="location" /><span>Place</span></label>
+            </div>
+          </div>
+
+          <!-- Input -->
+          <div class="field">
+            <p class="field-label">⸻&nbsp;&nbsp;The names to be considered&nbsp;&nbsp;⸻</p>
+            <div class="ledger-tabs" role="tablist">
+              <button class="ledger-tab is-active" data-tab="paste" role="tab">A written list</button>
+              <button class="ledger-tab" data-tab="upload" role="tab">A spreadsheet</button>
+              <button class="ledger-tab" data-tab="json" role="tab">Structured records</button>
+            </div>
+
+            <div class="tabpane" data-pane="paste">
+              <textarea
+                id="pasteInput"
+                rows="6"
+                placeholder="One name to a line, or parted by commas&#10;Jane Doe&#10;Ahmad Ismail&#10;Acme Holdings"
+              ></textarea>
+              <p class="aside">
+                Suited to a swift enquiry by name. For email or telephone,
+                a spreadsheet or structured records serve better.
+              </p>
+            </div>
+
+            <div class="tabpane is-hidden" data-pane="upload">
+              <label class="ledger-drop" id="dropzone">
+                <input type="file" id="csvFile" accept=".csv,text/csv" hidden />
+                <span id="dzText">Lay a CSV here, or choose one from your papers</span>
+                <span class="aside">
+                  A header row is required — columns named name, email,
+                  phone, company, location.
+                </span>
+              </label>
+            </div>
+
+            <div class="tabpane is-hidden" data-pane="json">
+              <textarea
+                id="jsonInput"
+                rows="6"
+                placeholder='[&#10;  { "name": "Jane Doe", "email": "jane@acme.com" },&#10;  { "name": "Ahmad Ismail", "phone": "+60123456789" }&#10;]'
+              ></textarea>
+            </div>
+          </div>
+
+          <div class="enquiry-foot">
+            <button id="runBtn" class="seal-action" disabled>
+              Sweep the register
+            </button>
+            <p id="runMsg" class="runmsg" role="status"></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── The findings (results) ──────────────────────────────── -->
+      <section class="movement shell" id="findings">
+        <div class="movement-head">
+          <p class="numeral">II.</p>
+          <h2 class="heading">The findings</h2>
+        </div>
+
+        <div id="summary" class="summary" hidden></div>
+
+        <div class="register-filters" id="filterbar" hidden>
+          <button class="register-filter is-active" data-filter="all">All</button>
+          <button class="register-filter" data-filter="duplicate">
+            Already kept <span class="tally" data-count="duplicate">0</span>
+          </button>
+          <button class="register-filter" data-filter="review">
+            For your eye <span class="tally" data-count="review">0</span>
+          </button>
+          <button class="register-filter" data-filter="new">
+            Newly found <span class="tally" data-count="new">0</span>
+          </button>
+        </div>
+
+        <div id="resultsArea" class="findings-body">
+          <div class="repose" id="emptyState">
+            <p class="repose-line italic">
+              No enquiry has yet been made.
+            </p>
+            <p class="aside">
+              Enter your tenant key above, choose a register and its marks,
+              then sweep.
+            </p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- ── Colophon ──────────────────────────────────────────────── -->
+    <footer class="colophon">
+      <div class="hairline"></div>
+      <div class="shell colophon-row">
+        <span class="wordmark small">Claritas</span>
+        <span class="colophon-note italic">
+          The Global Search Agent · an instrument for remembering
+        </span>
+        <span class="colophon-mark">By appointment of the register</span>
+      </div>
+    </footer>
+
+    <!-- ── Naming a register (connector dialog) ──────────────────── -->
+    <dialog id="connectorDialog" class="leaf">
+      <form method="dialog" id="connectorForm">
+        <p class="leaf-eyebrow">⸻&nbsp;&nbsp;A new register&nbsp;&nbsp;⸻</p>
+        <h3 class="leaf-title">Name the connected application</h3>
+        <p class="aside leaf-aside">
+          The application must answer the agent's two endpoints — a search
+          and a create — described in the README under the per-app contract.
+        </p>
+        <label class="leaf-field">
+          <span>The register's name</span>
+          <input name="name" required maxlength="120" placeholder="Acme CRM" />
+        </label>
+        <label class="leaf-field">
+          <span>Its address</span>
+          <input name="base_url" required placeholder="https://crm.acme.com/api" />
+        </label>
+        <div class="leaf-pair">
+          <label class="leaf-field">
+            <span>The search path</span>
+            <input name="search_path" placeholder="/records/search" />
+          </label>
+          <label class="leaf-field">
+            <span>The create path</span>
+            <input name="create_path" placeholder="/leads" />
+          </label>
+        </div>
+        <label class="leaf-field">
+          <span>Manner of authority</span>
+          <select name="auth_type">
+            <option value="bearer">A bearer token</option>
+            <option value="header">A custom header</option>
+            <option value="none">None required</option>
+          </select>
+        </label>
+        <label class="leaf-field">
+          <span>Its credential — held under encryption</span>
+          <input name="credential" type="password" autocomplete="off" placeholder="token for the connected application" />
+        </label>
+        <p id="connectorErr" class="leaf-error"></p>
+        <menu class="leaf-actions">
+          <button value="cancel" class="link-action">Withdraw</button>
+          <button value="save" id="connectorSave" class="seal-action small">Enter the register</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <script src="/app.js" defer></script>
+  </body>
+</html>

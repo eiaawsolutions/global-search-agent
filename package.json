@@ -1,0 +1,31 @@
+{
+  "name": "global-search-agent",
+  "version": "1.0.0",
+  "description": "Multi-tenant global search agent — sweeps connected app databases to identify duplicate and new records via deterministic + fuzzy matching",
+  "main": "src/server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "migrate": "node src/db/migrate.js",
+    "seed": "node src/db/seed.js",
+    "test": "node --test \"test/*.test.js\"",
+    "test:smoke": "node test/smoke.mjs",
+    "test:vistage": "node test/vistage-connect.mjs",
+    "test:vistage:sweep": "node test/vistage-sweep.mjs"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.7.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^8.3.2",
+    "helmet": "^8.1.0",
+    "multer": "^2.0.1",
+    "uuid": "^13.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,35 @@
+# GCP Cloud Build — builds the container and pushes it to Artifact Registry.
+# Trigger:  gcloud builds submit --config deploy/cloudbuild.yaml \
+#             --substitutions=_REGION=asia-southeast1
+#
+# After this, deploy with deploy/deploy-gcp.sh (which runs `gcloud run deploy`
+# against the image this produces).
+substitutions:
+  _REGION: asia-southeast1
+  _REPO: global-search-agent
+  _IMAGE: global-search-agent
+
+steps:
+  # Build the production image from the repo-root Dockerfile.
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:$SHORT_SHA
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:latest
+      - .
+
+  # Push both tags to Artifact Registry.
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - --all-tags
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:$SHORT_SHA
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:latest
+
+options:
+  logging: CLOUD_LOGGING_ONLY

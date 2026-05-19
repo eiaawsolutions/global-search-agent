@@ -1,0 +1,17 @@
+# Keep the build context minimal and never bake local state or secrets in.
+node_modules
+data
+*.db
+*.db-shm
+*.db-wal
+.env
+.env.*
+!.env.example
+.git
+.gitignore
+test
+coverage
+*.md
+!README.md
+npm-debug.log*
+.DS_Store

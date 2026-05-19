@@ -1,0 +1,21 @@
+node_modules/
+data/
+*.db
+*.db-shm
+*.db-wal
+.env
+.DS_Store
+npm-debug.log*
+coverage/
+
+# Binary reference material — kept locally, not in the repo. The Vistage
+# API PDF in particular carries integration details that must not be
+# committed to version history.
+*.docx
+*.pdf
+*.xlsx
+
+# Office / editor lock & temp files
+~$*
+~WRL*.tmp
+*.tmp

@@ -14,11 +14,22 @@
       /* Settings page — reuses the console's tokens (app.css :root). A
          single centred card; one view visible at a time. */
       .auth-wrap {
+        /* 100vh on mobile Safari includes the address bar and causes a
+           layout jump; dvh tracks the actual visible viewport. */
         min-height: calc(100vh - 60px);
+        min-height: calc(100dvh - 60px);
         display: flex;
         align-items: flex-start;
         justify-content: center;
         padding: 48px 20px;
+      }
+      @media (max-width: 480px) {
+        .auth-wrap {
+          padding: 24px 14px;
+        }
+        .auth-card {
+          padding: 22px 18px;
+        }
       }
       .auth-card {
         width: 100%;
@@ -91,8 +102,18 @@
         font-family:
           ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
         letter-spacing: 8px;
+        /* Offset the trailing letter-spacing so the digits stay centred. */
+        text-indent: 8px;
         text-align: center;
         font-size: 20px !important;
+      }
+      /* On a narrow phone, ease the tracking so the six digits plus the
+         16px-min font fit inside the field without overflowing. */
+      @media (max-width: 360px) {
+        .code-input {
+          letter-spacing: 4px;
+          text-indent: 4px;
+        }
       }
       .auth-msg {
         font-size: 12px;
@@ -120,6 +141,13 @@
         .enroll-grid {
           flex-direction: column;
           align-items: center;
+        }
+      }
+      /* iOS Safari auto-zooms when a focused input's font is below 16px.
+         The form inputs are 14px — bump them on small screens. */
+      @media (max-width: 640px) {
+        .form-field input {
+          font-size: 16px;
         }
       }
       .qr-box {

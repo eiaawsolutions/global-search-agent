@@ -83,35 +83,6 @@ body {
   flex-wrap: wrap;
 }
 
-.connect-label {
-  font-size: 9px;
-  line-height: 1.15;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--text-faint);
-  text-align: right;
-}
-
-.connect input {
-  width: 240px;
-  padding: 9px 12px;
-  background: var(--panel-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text);
-  font-size: 13px;
-  font-family: inherit;
-}
-
-.connect input::placeholder {
-  color: var(--text-faint);
-}
-
-.connect input:focus {
-  outline: none;
-  border-color: var(--accent-dim);
-}
-
 .state {
   font-size: 10px;
   text-transform: uppercase;
@@ -560,6 +531,8 @@ textarea:focus {
   font-size: 14px;
   font-weight: 600;
   color: var(--text);
+  /* A long name + company aside must wrap inside the card, not overflow. */
+  overflow-wrap: anywhere;
 }
 .finding-name .secondary {
   font-weight: 400;
@@ -583,6 +556,9 @@ textarea:focus {
   gap: 10px;
   font-size: 12px;
   padding: 3px 0;
+  /* On a narrow card the score wraps to its own line instead of being
+     pushed off-screen by a long email pair. */
+  flex-wrap: wrap;
 }
 .ev-field {
   width: 64px;
@@ -596,6 +572,8 @@ textarea:focus {
   flex: 1;
   min-width: 0;
   color: var(--text-dim);
+  /* Long unbroken emails / values must break rather than overflow the card. */
+  overflow-wrap: anywhere;
 }
 .ev-values .arrow {
   color: var(--text-faint);
@@ -685,11 +663,17 @@ textarea:focus {
 .modal {
   width: 460px;
   max-width: calc(100vw - 32px);
+  /* Cap the height so the 8-field form scrolls on a short / landscape phone
+     instead of clipping its lower fields and the action buttons. */
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
   background: var(--panel);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 24px;
+  /* Smooth momentum scroll inside the dialog on iOS. */
+  -webkit-overflow-scrolling: touch;
 }
 .modal::backdrop {
   background: rgba(4, 7, 10, 0.7);
@@ -1136,15 +1120,6 @@ textarea:focus {
   .panel {
     padding: 18px 16px;
   }
-  /* The connect block becomes its own full-width row under the brand. */
-  .connect {
-    width: 100%;
-  }
-  .connect input {
-    flex: 1;
-    min-width: 0;
-    width: auto;
-  }
   .summary {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -1159,7 +1134,6 @@ textarea:focus {
   }
   /* Stop iOS Safari zooming the page when a small-font input is focused —
      anything below 16px triggers the auto-zoom. */
-  .connect input,
   textarea,
   .select,
   .modal-field input,
@@ -1168,7 +1142,7 @@ textarea:focus {
   }
 }
 
-/* Small phone — drop the API-key caption, tighten everything further. */
+/* Small phone — tighten everything further. */
 @media (max-width: 420px) {
   .topbar {
     padding: 12px 14px;
@@ -1176,15 +1150,8 @@ textarea:focus {
   .layout {
     padding: 14px 14px 32px;
   }
-  .connect-label {
-    display: none;
-  }
   .connect {
     gap: 8px;
-  }
-  /* Keep the Connect button and status on one line below the input. */
-  .connect input {
-    flex-basis: 100%;
   }
   .summary {
     grid-template-columns: 1fr 1fr;
@@ -1196,8 +1163,20 @@ textarea:focus {
   .pay-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+  /* Three input tabs can exceed a 320px width — let them scroll sideways
+     rather than wrap (wrapping would break the shared underline). */
   .tabs {
     gap: 14px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar {
+    display: none;
+  }
+  .tab {
+    white-space: nowrap;
+    flex-shrink: 0;
   }
   .filters {
     gap: 6px;

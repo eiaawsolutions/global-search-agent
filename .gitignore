@@ -19,3 +19,8 @@ coverage/
 ~$*
 ~WRL*.tmp
 *.tmp
+
+# Demo / sample contact data — kept locally for manual testing, never
+# committed (may contain contact-shaped data that does not belong in
+# version history).
+*.csv

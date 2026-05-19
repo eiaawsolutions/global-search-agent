@@ -50,6 +50,52 @@ export function hashApiKey(key) {
   return crypto.createHash('sha256').update(String(key)).digest('hex');
 }
 
+// ── Admin password hashing (scrypt) ──────────────────────────────────
+// scrypt is memory-hard, so an offline cracker cannot trade memory for
+// speed the way it can against a plain SHA-256. Each password gets its
+// own 16-byte random salt; the stored form is `salt:derivedKey` in hex.
+// N=2^15 is a sensible interactive cost for a login that runs rarely.
+const SCRYPT_KEYLEN = 64;
+const SCRYPT_PARAMS = { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
+
+export function hashPassword(password) {
+  if (!password) throw new Error('hashPassword() requires a password');
+  const salt = crypto.randomBytes(16);
+  const dk = crypto.scryptSync(String(password), salt, SCRYPT_KEYLEN, SCRYPT_PARAMS);
+  return `${salt.toString('hex')}:${dk.toString('hex')}`;
+}
+
+// Verify a password against a stored `salt:derivedKey` hash. The compare
+// is constant-time so a timing side-channel cannot reveal how many bytes
+// matched. A malformed stored value returns false rather than throwing.
+export function verifyPassword(password, stored) {
+  if (!password || !stored || typeof stored !== 'string') return false;
+  const [saltHex, keyHex] = stored.split(':');
+  if (!saltHex || !keyHex) return false;
+  let salt, expected;
+  try {
+    salt = Buffer.from(saltHex, 'hex');
+    expected = Buffer.from(keyHex, 'hex');
+  } catch {
+    return false;
+  }
+  if (salt.length !== 16 || expected.length !== SCRYPT_KEYLEN) return false;
+  const actual = crypto.scryptSync(
+    String(password), salt, SCRYPT_KEYLEN, SCRYPT_PARAMS
+  );
+  return crypto.timingSafeEqual(actual, expected);
+}
+
+// An opaque session token. The plaintext goes in the admin's cookie; only
+// its SHA-256 hash is stored, so a leaked DB row cannot be replayed.
+export function generateSessionToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+export function hashSessionToken(token) {
+  return crypto.createHash('sha256').update(String(token)).digest('hex');
+}
+
 // Constant-time compare to avoid leaking match position via timing.
 export function safeEqual(a, b) {
   const ba = Buffer.from(String(a));

@@ -4,9 +4,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import db, { global, uuid } from './index.js';
+import db, { global, admins, uuid } from './index.js';
 import { config } from '../config.js';
-import { generateApiKey, hashApiKey } from '../utils/crypto.js';
+import { generateApiKey, hashApiKey, hashPassword } from '../utils/crypto.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -20,6 +20,16 @@ function applyColumnMigrations(silent) {
       ddl: `ALTER TABLE connectors ADD COLUMN kind TEXT NOT NULL DEFAULT 'generic'` },
     { table: 'connectors', column: 'meta_json',
       ddl: `ALTER TABLE connectors ADD COLUMN meta_json TEXT NOT NULL DEFAULT '{}'` },
+    // Enrichment: optional detail endpoint + detail-record field map.
+    { table: 'connectors', column: 'enrich_path',
+      ddl: `ALTER TABLE connectors ADD COLUMN enrich_path TEXT NOT NULL DEFAULT ''` },
+    { table: 'connectors', column: 'enrich_field_map_json',
+      ddl: `ALTER TABLE connectors ADD COLUMN enrich_field_map_json TEXT NOT NULL DEFAULT '{}'` },
+    // Enrichment: per-result cached profile/group/payment object.
+    { table: 'search_results', column: 'enrichment_json',
+      ddl: `ALTER TABLE search_results ADD COLUMN enrichment_json TEXT` },
+    { table: 'search_results', column: 'enriched_at',
+      ddl: `ALTER TABLE search_results ADD COLUMN enriched_at TEXT` },
   ];
   for (const m of pending) {
     const cols = db.prepare(`PRAGMA table_info(${m.table})`).all();
@@ -72,6 +82,27 @@ export function migrate({ silent = false } = {}) {
     }
   } else if (!silent) {
     console.log('✔ Tenants already exist — skipping bootstrap.');
+  }
+
+  // ── First admin seed ──────────────────────────────────────────────
+  // If ADMIN_USERNAME + ADMIN_PASSWORD are set and no admin exists yet,
+  // create the admin row from them. The password is scrypt-hashed before
+  // storage — the plaintext is never persisted. The 2FA secret is NOT
+  // seeded here: the admin still completes a one-time TOTP enrollment on
+  // first login (scan the QR, confirm a code) so the second factor is
+  // bound to a device the operator actually controls. When the env vars
+  // are absent, no admin is created and the /setup page handles first-run
+  // enrollment instead.
+  if (admins.count() === 0 && config.adminUsername && config.adminPassword) {
+    admins.create({
+      id: uuid(),
+      username: config.adminUsername,
+      passwordHash: hashPassword(config.adminPassword),
+    });
+    if (!silent) {
+      console.log('✔ Admin seeded from ADMIN_USERNAME / ADMIN_PASSWORD env.');
+      console.log('  Open /settings and complete the one-time 2FA enrollment.');
+    }
   }
   return createdKey;
 }

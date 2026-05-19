@@ -1,9 +1,11 @@
-// Authentication + tenant-resolution middleware.
+// Authentication helpers.
 //
-// Every API request must carry a tenant API key (Authorization: Bearer ...
-// or X-API-Key). The key is hashed and looked up; on success the request
-// gets a tenant-scoped repository at req.repo so handlers can NEVER touch
-// another tenant's data. There is no global db handle in the route layer.
+// `asyncHandler` wraps route handlers so thrown/rejected errors reach the
+// error middleware. `requireApiKey` is the original key-only tenant
+// resolver; the live server now uses `resolveTenant` in admin-auth.js
+// (which keeps this key path AND adds the no-key admin-configured proxy).
+// `requireApiKey` is retained for the test suite and as a reference for the
+// strict key-only contract.
 import { global, forTenant } from '../db/index.js';
 import { hashApiKey } from '../utils/crypto.js';
 

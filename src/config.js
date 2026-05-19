@@ -52,6 +52,37 @@ export const config = {
   maxCsvRows: parseInt(process.env.MAX_CSV_ROWS || '10000', 10),
   rateLimitPerMin: parseInt(process.env.RATE_LIMIT_PER_MIN || '120', 10),
 
+  // ── Admin / Settings page ──────────────────────────────────────────
+  // The Settings page (where the admin chooses which tenant key the public
+  // app proxies with) is guarded by a username + password + mandatory TOTP
+  // 2FA login. The FIRST admin is created in one of two ways:
+  //   • ADMIN_USERNAME + ADMIN_PASSWORD set  → migrate() seeds the admin row
+  //     on boot; the admin then completes a one-time 2FA enrollment at login.
+  //   • neither set                          → the one-time /setup page
+  //     handles first-run enrollment (username + password + 2FA QR).
+  // Once an admin exists, /setup is permanently closed regardless of env.
+  adminUsername: (process.env.ADMIN_USERNAME || '').trim(),
+  adminPassword: process.env.ADMIN_PASSWORD || '',
+
+  // Admin session lifetime — how long a Settings login stays valid before
+  // re-authentication is required. Default 12h.
+  adminSessionHours: parseInt(process.env.ADMIN_SESSION_HOURS || '12', 10),
+
+  // Brute-force lockout: after this many consecutive failed admin logins the
+  // account is locked for the window below. The per-IP API rate limiter is a
+  // second, independent layer.
+  adminMaxFailedLogins: parseInt(process.env.ADMIN_MAX_FAILED_LOGINS || '5', 10),
+  adminLockMinutes: parseInt(process.env.ADMIN_LOCK_MINUTES || '15', 10),
+
+  // A tighter per-IP rate limit specifically for the admin auth endpoints
+  // (/api/admin/*) — login, 2FA, setup. Lower than the general API limit
+  // because these are guessing targets. Counts every admin request, so keep
+  // it comfortably above the handful a real login round-trip needs.
+  adminAuthRateLimitPerMin: parseInt(
+    process.env.ADMIN_AUTH_RATE_LIMIT_PER_MIN || '30',
+    10
+  ),
+
   // SSRF policy. Connectors pointing at private/loopback addresses are
   // refused by default. This escape hatch is for local development and CI
   // (sweeping a mock app on 127.0.0.1) ONLY — it is force-disabled in

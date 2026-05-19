@@ -28,7 +28,7 @@
 
 html,
 body {
-  height: 100%;
+  min-height: 100%;
 }
 
 body {
@@ -40,6 +40,10 @@ body {
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
+  /* Honour the device safe area (notch / home indicator) on the sides. */
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
 }
 
 /* ── Header ─────────────────────────────────────────────────────── */
@@ -76,6 +80,7 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .connect-label {
@@ -501,6 +506,15 @@ textarea:focus {
   font-size: 12px;
   max-width: 360px;
 }
+/* Inline link inside an empty-state note (e.g. "Open Settings →"). */
+.text-link-inline {
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.text-link-inline:hover {
+  text-decoration: underline;
+}
 
 /* ── Finding cards ──────────────────────────────────────────────── */
 .finding {
@@ -732,23 +746,492 @@ textarea:focus {
   margin-top: 8px;
 }
 
+/* ── View-details control ───────────────────────────────────────── */
+/* Always present on a matched finding. A quiet bordered button, not a
+   slab — sits inline under the evidence, reveals the profile panel. */
+.view-details {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition:
+    border-color 0.12s ease,
+    color 0.12s ease,
+    background 0.12s ease;
+}
+.view-details:hover {
+  border-color: var(--accent-dim);
+  color: var(--text);
+}
+.view-details.is-open {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.vd-caret {
+  font-size: 9px;
+  line-height: 1;
+}
+
+/* "Not available yet" notice — shown in-place when enrichment is not wired. */
+.enrich-pending-setup {
+  padding: 4px 2px;
+}
+.eps-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.eps-note {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+.eps-reason {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
+  font-style: italic;
+}
+
+/* ── Enrichment panel ───────────────────────────────────────────── */
+/* Inline profile panel, expanded on demand under a matched finding.
+   Same dark surfaces and teal accent as the rest of the console. */
+.enrich-panel {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  padding: 16px;
+}
+
+.enrich-loading,
+.enrich-error {
+  font-size: 12px;
+  margin: 0;
+}
+.enrich-loading {
+  color: var(--text-dim);
+}
+.enrich-error {
+  color: var(--danger);
+}
+
+/* Identity header */
+.enrich-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.enrich-avatar {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-dim);
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.enrich-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.enrich-id {
+  min-width: 0;
+}
+.enrich-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.enrich-sub {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+.enrich-marks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.enrich-mark {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 7px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+.mark-ok {
+  color: var(--ok);
+  border-color: rgba(20, 184, 138, 0.4);
+}
+.mark-bad {
+  color: var(--danger);
+  border-color: rgba(224, 96, 79, 0.4);
+}
+
+/* Fact grid — contact + linkage */
+.enrich-facts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 18px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+.fact {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.fact-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-faint);
+}
+.fact-value {
+  font-size: 12px;
+  color: var(--text);
+  word-break: break-word;
+}
+.fact-empty {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+/* Sections */
+.enrich-section {
+  padding-top: 12px;
+}
+.enrich-section-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--text-dim);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.enrich-none {
+  font-size: 12px;
+  color: var(--text-faint);
+  font-style: italic;
+  margin: 0;
+}
+
+/* Payment-by-month grid */
+.pay-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+}
+.pay-cell {
+  border: 1px solid var(--border-soft);
+  border-radius: 4px;
+  padding: 7px 6px;
+  text-align: center;
+  background: var(--panel-2);
+}
+.pay-month {
+  display: block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-faint);
+}
+.pay-state {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  margin-top: 2px;
+  color: var(--text-dim);
+}
+.pay-amount {
+  display: block;
+  font-size: 10px;
+  color: var(--text-faint);
+  margin-top: 1px;
+}
+/* State colours: paid=teal, due=amber, overdue=red, no-record=muted */
+.pay-paid {
+  border-color: rgba(20, 184, 138, 0.4);
+}
+.pay-paid .pay-state {
+  color: var(--accent);
+}
+.pay-due {
+  border-color: rgba(216, 160, 64, 0.45);
+}
+.pay-due .pay-state,
+.pay-partial .pay-state {
+  color: #d8a040;
+}
+.pay-partial {
+  border-color: rgba(216, 160, 64, 0.35);
+  border-style: dashed;
+}
+.pay-overdue {
+  border-color: rgba(224, 96, 79, 0.5);
+  background: rgba(224, 96, 79, 0.07);
+}
+.pay-overdue .pay-state {
+  color: var(--danger);
+}
+.pay-no-record {
+  opacity: 0.55;
+}
+.pay-tally {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 8px;
+}
+
+/* Outstanding balance row */
+.enrich-outstanding {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 4px;
+  background: var(--panel-2);
+}
+.out-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+}
+.out-value {
+  font-size: 14px;
+  font-weight: 600;
+}
+.out-due {
+  color: var(--danger);
+}
+.out-clear {
+  color: var(--accent);
+}
+.out-unknown {
+  color: var(--text-faint);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 12px;
+}
+
+/* Pending items */
+.pend-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.pend-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text);
+}
+.pend-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--text-faint);
+  transform: translateY(-1px);
+}
+.pend-high .pend-dot {
+  background: var(--danger);
+}
+.pend-warn .pend-dot {
+  background: #d8a040;
+}
+.pend-text {
+  flex: 1;
+  min-width: 0;
+}
+.pend-tag {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-faint);
+  border: 1px solid var(--border-soft);
+  border-radius: 3px;
+  padding: 1px 5px;
+  flex-shrink: 0;
+}
+
+/* Provenance footer */
+.enrich-foot {
+  font-size: 10px;
+  color: var(--text-faint);
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-soft);
+  line-height: 1.45;
+}
+
 /* ── Responsive ─────────────────────────────────────────────────── */
+
+/* Tablet & below — stack the two-column layout, let the header wrap. */
 @media (max-width: 880px) {
   .layout {
     grid-template-columns: 1fr;
+    gap: 18px;
   }
   .topbar {
     flex-wrap: wrap;
     gap: 14px;
   }
+  .finding {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  /* When the verdict block sits above the body, lay it out as a row so
+     the colour rule and label read horizontally instead of stacked. */
+  .finding-verdict {
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+  }
+  .verdict-rule {
+    width: 18px;
+  }
+}
+
+/* Large phone — single-column results stats, looser horizontal padding. */
+@media (max-width: 640px) {
+  .topbar {
+    padding: 14px 18px;
+  }
+  .layout {
+    padding: 18px 18px 40px;
+  }
+  .panel {
+    padding: 18px 16px;
+  }
+  /* The connect block becomes its own full-width row under the brand. */
+  .connect {
+    width: 100%;
+  }
   .connect input {
-    width: 180px;
+    flex: 1;
+    min-width: 0;
+    width: auto;
   }
   .summary {
     grid-template-columns: repeat(2, 1fr);
   }
-  .finding {
+  .enrich-facts {
     grid-template-columns: 1fr;
-    gap: 10px;
+  }
+  .modal-pair {
+    grid-template-columns: 1fr;
+  }
+  .pay-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  /* Stop iOS Safari zooming the page when a small-font input is focused —
+     anything below 16px triggers the auto-zoom. */
+  .connect input,
+  textarea,
+  .select,
+  .modal-field input,
+  .modal-field select {
+    font-size: 16px;
+  }
+}
+
+/* Small phone — drop the API-key caption, tighten everything further. */
+@media (max-width: 420px) {
+  .topbar {
+    padding: 12px 14px;
+  }
+  .layout {
+    padding: 14px 14px 32px;
+  }
+  .connect-label {
+    display: none;
+  }
+  .connect {
+    gap: 8px;
+  }
+  /* Keep the Connect button and status on one line below the input. */
+  .connect input {
+    flex-basis: 100%;
+  }
+  .summary {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .s-num {
+    font-size: 18px;
+  }
+  .pay-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .tabs {
+    gap: 14px;
+  }
+  .filters {
+    gap: 6px;
+  }
+}
+
+/* Coarse-pointer devices — guarantee comfortable touch targets regardless
+   of viewport width (covers tablets in landscape too). */
+@media (pointer: coarse) {
+  .tab {
+    padding: 10px 0;
+  }
+  .filter,
+  .btn-ghost,
+  .view-details {
+    min-height: 40px;
+  }
+  .chip span {
+    padding: 9px 16px;
+  }
+  .link-action {
+    display: inline-block;
+    padding: 6px 0;
+    min-height: 32px;
+  }
+}
+
+/* Respect a reduced-motion preference — disable the spinner and transitions. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
   }
 }

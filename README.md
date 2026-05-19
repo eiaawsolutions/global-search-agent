@@ -33,9 +33,51 @@ API key** and **webhook secret** to the console — store them; the key is not
 recoverable. Then open <http://localhost:4100>.
 
 ```bash
-npm test          # unit + integration suite (28 tests)
+npm test          # unit + integration suite
 npm run test:smoke   # full end-to-end smoke test against a mock connected app
 ```
+
+---
+
+## Console access & Settings
+
+The web console **connects automatically** — there is no API key to type. An
+**administrator** configures the tenant key once on a 2FA-protected Settings
+page, and from then on every visitor, on any device or browser, opening the
+same link is connected. The tenant key is held server-side and proxied onto
+each request; it is **never sent to a visitor's browser**.
+
+### One-time admin setup
+
+The Settings page (`/settings`) is guarded by a username + password +
+mandatory **TOTP two-factor authentication**. Create the first admin in one
+of two ways:
+
+- **Setup page** — leave `ADMIN_USERNAME` / `ADMIN_PASSWORD` unset and open
+  `/settings`. The one-time `/setup` screen takes a username, a password,
+  and a 2FA QR to scan. After it runs, `/setup` is permanently closed.
+- **Env seed** — set `ADMIN_USERNAME` + `ADMIN_PASSWORD`; the admin row is
+  created on boot. The admin completes the one-time 2FA enrollment (scan the
+  QR) at first login.
+
+### Configure the console
+
+Sign in to `/settings`, then under **Console tenant key** paste a tenant API
+key (a `gsa_…` key — e.g. the bootstrap key). The server hashes it to
+resolve the tenant, stores only the tenant id, and discards the key. The
+console is now connected for everyone. Pasting a new key later **rotates**
+it. Non-admins cannot reach Settings — they only ever see the working
+console.
+
+**Security.** Passwords are scrypt-hashed; TOTP secrets are AES-256-GCM
+encrypted at rest. Five failed logins lock the account for 15 minutes.
+Sessions are server-side, HttpOnly + SameSite=Strict cookies — only a hash
+of the session token is stored. The tenant API key is never stored in
+plaintext, never logged, and never returned to any browser.
+
+> The REST API and signed webhooks are **unchanged** — they still
+> authenticate with an explicit `Authorization: Bearer <key>` /
+> `X-API-Key`. The no-key proxy applies only to the browser console.
 
 ---
 
@@ -181,6 +223,47 @@ npm run test:vistage:sweep    # full end-to-end sweep through the agent
 
 ---
 
+## Enriching a finding
+
+A sweep tells you *whether* a record exists in the connected database. Once a
+record matches (`duplicate` or `review`), you can **enrich** it — pull the
+linked record's full picture from the connected app:
+
+- **Related user profile** — name, salutation, job title, member number,
+  account status, contact details, member-since date.
+- **Linked group & chair** — the group / chapter / team the record belongs to
+  and the chair / facilitator over it.
+- **Reporting line** — who the record reports to.
+- **Payment status by month** — a 12-cell grid for the current calendar year:
+  each month is `paid` / `due` / `overdue` / `partial`, or `no-record` when
+  the CRM returned nothing for it.
+- **Outstanding balance** — the amount owed, if the CRM reports one.
+- **Needs attention** — any pending items the CRM flags, plus *derived*
+  honest summaries (an overdue month it reported, a renewal date now past).
+
+Enrichment is **on-demand** — click *Enrich* on a matched finding in the
+console (or `GET /api/results/:id/enrich`). The profile is fetched once from
+the connected app and cached on the result; pass `?refresh=1` to re-fetch.
+
+**Verification over assumption.** The enrichment normalizer
+(`src/enrich/normalize.js`) fabricates nothing. Every field is populated only
+from a value the connected app actually returned — a field the CRM does not
+supply is shown as *"not provided by the CRM"*, never a guessed value, and a
+month with no payment record stays `no-record`, never assumed paid.
+
+Enrichment works against any connector:
+
+- **`vistage`** — uses the CRM's `GetDetail` endpoint automatically.
+- **`generic`** — set an optional `enrich_path` on the connector (a third
+  endpoint alongside search and create). It receives the matched record's id
+  and responds with one detail object: `{ "record": { ... } }`. An
+  `enrich_field_map` on the connector translates the app's detail-record field
+  names into the normalizer's canonical concepts (`group`, `chair`,
+  `reportsTo`, `payments`, `outstandingAmount`, `pendingItems`, …). A generic
+  connector with no `enrich_path` simply has enrichment disabled.
+
+---
+
 ## REST API
 
 All `/api` routes require the tenant API key as `Authorization: Bearer <key>`
@@ -195,8 +278,13 @@ or `X-API-Key: <key>`.
 | `GET  /api/search/:id` | Job status + rollup counts |
 | `GET  /api/search/:id/results?classification=duplicate\|review\|new` | Classified results with evidence |
 | `POST /api/results/:id/add-lead` | The CTA — push a `new` record to the connected app |
+| `GET  /api/results/:id/enrich` | Enrich a matched finding — linked profile, group/chair, reporting line, payment status by month, outstanding, pending items |
 | `GET  /api/jobs` | Recent jobs |
 | `POST /api/webhook/search` | HMAC-signed sweep trigger (for app-to-agent integration) |
+
+> The `/api/admin/*` routes (admin login, 2FA, Settings) are **not** part of
+> this surface — they authenticate with the admin session cookie, not a
+> tenant key. See [Console access & Settings](#console-access--settings).
 
 ### Create a sweep
 
@@ -259,9 +347,11 @@ When a job completes, the agent POSTs a signed callback to
 | Tampering | Idempotency keys on ingest; raw-body signature verification on inbound webhooks |
 | Cross-tenant access | Every query tenant-scoped in the data layer; automated leakage test |
 | SSRF via connector URLs | Connector hosts resolving to private/loopback/link-local ranges are refused |
-| Credential exposure | Connected-app credentials encrypted with AES-256-GCM; never returned by the API |
+| Credential exposure | Connected-app credentials encrypted with AES-256-GCM; never returned by the API; the proxied tenant key is never sent to a browser or logged |
+| Admin account compromise | Password scrypt-hashed; mandatory TOTP 2FA; account lockout after repeated failures; per-IP rate limit on admin auth |
+| Admin session theft | Server-side sessions; HttpOnly + SameSite=Strict cookie; only the session-token hash stored; fixed expiry; password change revokes all sessions |
 | Abuse / DoS | Per-tenant rate limiting; CSV byte + row caps; outbound request timeouts |
-| Information disclosure | No stack traces, no version headers, generic auth errors |
+| Information disclosure | No stack traces, no version headers, generic auth errors (no admin username enumeration) |
 
 > `ALLOW_PRIVATE_CONNECTORS=true` permits private/loopback connector hosts for
 > local development and CI only. It is **force-disabled** when
@@ -276,9 +366,9 @@ src/
   config.js              env loading + validation
   server.js              Express app, middleware, route wiring
   db/
-    schema.sql           multi-tenant schema
-    index.js             connection + tenant-scoped repository
-    migrate.js           schema apply + bootstrap tenant
+    schema.sql           multi-tenant schema (+ admins, sessions, settings)
+    index.js             connection + tenant-scoped repository + admin ops
+    migrate.js           schema apply + bootstrap tenant + admin seed
   matching/
     normalize.js         field normalization (email/phone/name/company/location)
     similarity.js        Levenshtein, Jaro-Winkler, token-set primitives
@@ -289,9 +379,14 @@ src/
   ingest/csv.js          dependency-free RFC-4180 CSV + name-list parsing
   sweep/orchestrator.js  runs a job end-to-end (bounded concurrency)
   webhooks/dispatcher.js HMAC-signed outbound callbacks
-  routes/                connectors, search, webhook
-  middleware/            auth + tenant scoping, error handling
-public/                  self-contained web console (HTML + CSS + vanilla JS)
+  utils/
+    crypto.js            AES-256-GCM, API-key + scrypt password hashing, HMAC
+    totp.js              RFC 6238 TOTP (admin 2FA), dependency-free
+  routes/                connectors, search, webhook, admin
+  middleware/            auth, admin-auth (admin session + the no-key proxy),
+                         error handling
+public/                  self-contained web console + Settings page (HTML +
+                         CSS + vanilla JS; qr.js renders the 2FA QR)
 test/                    unit + integration suite, plus the e2e smoke test
 ```
 

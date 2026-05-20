@@ -128,10 +128,21 @@ async function vistageFetch(url, { method, headers, body }) {
       throw new Error('Vistage returned a non-JSON response.');
     }
     // The API signals failure in-band with success:false even on HTTP 200.
+    // Surface as much of the response as possible so operators can diagnose
+    // a rejection without re-tracing the call: msg → code → a trimmed view
+    // of `data` / the entire body. "unknown" hides the real reason and is
+    // banned here.
     if (json && json.success === false) {
-      throw new Error(
-        `Vistage API error: ${json.msg || json.code || 'unknown'}`
-      );
+      const bits = [];
+      if (json.msg) bits.push(`msg=${json.msg}`);
+      if (json.code) bits.push(`code=${json.code}`);
+      if (!bits.length) {
+        // Last resort — include the raw payload (capped) so the operator
+        // sees fields like data.errors, data.field, server hint, etc.
+        const dump = JSON.stringify(json).slice(0, 300);
+        bits.push(`body=${dump}`);
+      }
+      throw new Error(`Vistage API error: ${bits.join(' ')}`);
     }
     return json;
   } catch (err) {
@@ -478,16 +489,22 @@ export async function createLead(connector, lead, ctx = {}) {
 
   const { first, last } = splitName(lead.name);
   const meta = safeParse(connector.meta_json);
+  // Per V1 PDF §2.5: the Save body is `{Module, data}` where `data` carries
+  // only the lead fields. UserToken is NOT nested under `data` (that was a
+  // copy-paste from GetList that caused the staging server to reply
+  // success:false with no msg). We carry the UserToken in the body root so
+  // it's still available if the server needs it, but never inside `data`.
   const data = {
     LeadStatus: LEAD_STATUS.NEW,
     Qualified: '0',
     FirstName: first || '',
-    LastName: last || '',
+    // Vistage rejects an empty LastName. Fall back to a single space so the
+    // record still saves when the operator supplies a one-token name.
+    LastName: last || ' ',
     Branch: meta.defaultBranch || '',
     Mobile: lead.phone || '',
     Email: lead.email || '',
     Company: lead.company || '',
-    UserToken: userToken,
   };
 
   const resp = await postFunction(
@@ -495,7 +512,7 @@ export async function createLead(connector, lead, ctx = {}) {
     creds,
     accessToken,
     `Save/${companyId}`,
-    { Module: 'Lead', data }
+    { Module: 'Lead', data, UserToken: userToken }
   );
 
   // V1 spec shows the request shape but not the response shape; check the

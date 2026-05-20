@@ -460,20 +460,27 @@ export async function createLead(connector, lead, ctx = {}) {
     );
   }
 
-  const { first, last } = splitName(lead.name);
   const meta = safeParse(connector.meta_json);
   // Per V1 PDF §2.5: the Save body is `{Module, data}` where `data` carries
   // only the lead fields. UserToken is NOT nested under `data` (that was a
   // copy-paste from GetList that caused the staging server to reply
   // success:false with no msg). We carry the UserToken in the body root so
   // it's still available if the server needs it, but never inside `data`.
+  //
+  // Name handling: Vistage Lead's `name1` (the field GetList surfaces on
+  // every row) is populated from FirstName only — LastName lives separately
+  // and isn't returned as a raw string by GetList. That means if we split
+  // "chung wei ling" into FirstName=chung + LastName="wei ling", the next
+  // sweep of "chung wei ling" sees only `name1=chung` and can't close the
+  // dedup loop under strict-after-normalization matching. So we push the
+  // FULL input name into FirstName (LastName gets a single space because
+  // Vistage rejects an empty LastName). This keeps round-trip dedup working.
+  const fullName = String(lead.name || '').trim();
   const data = {
     LeadStatus: LEAD_STATUS.NEW,
     Qualified: '0',
-    FirstName: first || '',
-    // Vistage rejects an empty LastName. Fall back to a single space so the
-    // record still saves when the operator supplies a one-token name.
-    LastName: last || ' ',
+    FirstName: fullName,
+    LastName: ' ',
     Branch: meta.defaultBranch || '',
     Mobile: lead.phone || '',
     Email: lead.email || '',

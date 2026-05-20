@@ -584,15 +584,12 @@ function renderEnrichment(host, en, result) {
   facts.appendChild(fact('Email', profile.email));
   facts.appendChild(fact('Phone', profile.phone));
   facts.appendChild(fact('Group / chapter', link.group));
+  facts.appendChild(fact('Group number', link.groupNumber));
+  facts.appendChild(fact('Group type', link.groupType));
+  facts.appendChild(fact('Group leader', link.groupLeader || link.chair));
   facts.appendChild(fact('Group chair', link.chair));
-  facts.appendChild(
-    fact(
-      'Reports to',
-      link.reportsTo
-        ? link.reportsTo + (link.reportsToTitle ? ` (${link.reportsToTitle})` : '')
-        : null
-    )
-  );
+  facts.appendChild(fact('Role in group', link.role));
+  facts.appendChild(fact('Reports to', link.reportsTo));
   facts.appendChild(fact('Member since', profile.joinDate));
   host.appendChild(facts);
 
@@ -638,6 +635,47 @@ function renderEnrichment(host, en, result) {
     paySec.appendChild(tally);
   }
   host.appendChild(paySec);
+
+  // ── Meeting attendance ──
+  // Newest-first list of meetings the CRM returned. Each row shows the
+  // date, type (if any), and an attendance state. Empty list = the CRM
+  // didn't return any meeting rows for this member — we say that honestly
+  // rather than guessing zero attendance.
+  const meetings = Array.isArray(en.meetings) ? en.meetings : [];
+  const meetSec = el('div', 'enrich-section');
+  const meetTitle = el('p', 'enrich-section-title');
+  meetTitle.textContent = `Meeting attendance${meetings.length ? ` (${meetings.length})` : ''}`;
+  meetSec.appendChild(meetTitle);
+  if (!meetings.length) {
+    const none = el('p', 'enrich-none');
+    none.textContent = 'No meeting records returned by the CRM.';
+    meetSec.appendChild(none);
+  } else {
+    const list = el('ul', 'meet-list');
+    for (const m of meetings.slice(0, 24)) {
+      const li = el('li', `meet-item meet-${m.status || 'unknown'}`);
+      const dot = el('span', 'meet-dot');
+      li.appendChild(dot);
+      const date = el('span', 'meet-date');
+      date.textContent = m.date || 'undated';
+      li.appendChild(date);
+      const type = el('span', 'meet-type');
+      type.textContent = m.type || '';
+      li.appendChild(type);
+      const st = el('span', 'meet-state');
+      st.textContent = ATTEND_WORD[m.status] || m.status || 'unknown';
+      li.appendChild(st);
+      if (m.notes) li.title = m.notes;
+      list.appendChild(li);
+    }
+    meetSec.appendChild(list);
+    if (meetings.length > 24) {
+      const more = el('p', 'meet-more');
+      more.textContent = `+ ${meetings.length - 24} earlier meetings`;
+      meetSec.appendChild(more);
+    }
+  }
+  host.appendChild(meetSec);
 
   // ── Outstanding balance ──
   const out = en.outstanding || {};
@@ -709,6 +747,15 @@ const PAY_WORD = {
   overdue: 'Overdue',
   partial: 'Partial',
   'no-record': 'No record',
+};
+
+// Canonical attendance-state → display word.
+const ATTEND_WORD = {
+  attended: 'Attended',
+  absent: 'Absent',
+  excused: 'Excused',
+  late: 'Late',
+  unknown: 'Unknown',
 };
 
 function initialsOf(name) {

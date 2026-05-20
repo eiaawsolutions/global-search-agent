@@ -144,6 +144,56 @@ test('matching company suffixes are normalized away (Trading/Sdn Bhd)', () => {
   assert.equal(verdict.classification, 'duplicate');
 });
 
+test('company matching is EXACT after normalization — extra REAL words do not match', () => {
+  // "Acme Global" and "Acme" are different companies. The normalizer drops
+  // legal suffixes (Sdn Bhd, Holdings, Group, ...) but NOT real distinguishing
+  // words like "Global" — those stay, and strict comparison fails.
+  // Strict-criteria rule: if the user asked to match on BOTH name AND company
+  // and only one of the two agrees, that's not a duplicate — the weighted
+  // aggregate falls below the review threshold and the verdict is NEW.
+  const input = rec({ name: 'Jane Doe', company: 'Acme' });
+  const candidates = [
+    rec({ name: 'Jane Doe', company: 'Acme Global' }),
+  ];
+  const verdict = classifyInput(input, candidates, ['name', 'company']);
+  assert.equal(verdict.classification, 'new');
+  // A "new" verdict carries no matched_record and no evidence — exactly the
+  // honest-no-fabrication contract.
+  assert.equal(verdict.matchedRecord, null);
+  assert.deepEqual(verdict.matchedOn, []);
+});
+
+test('company matching does NOT match on letter-level overlap', () => {
+  // "Acme" vs "Acmex" must not be a partial match. Strict exact only.
+  const input = rec({ company: 'Acme' });
+  const candidates = [rec({ company: 'Acmex' })];
+  const verdict = classifyInput(input, candidates, ['company']);
+  assert.equal(verdict.classification, 'new');
+  assert.equal(verdict.score, 0);
+});
+
+test('location matching is EXACT after normalization — KL is not Kuala Lumpur', () => {
+  // Locations no longer match by containment or fuzzy similarity. "KL" is
+  // not the same string as "kuala lumpur" — they're different until proven
+  // otherwise. Cosmetic punctuation differences still normalize away.
+  const input = rec({ location: 'KL' });
+  const candidates = [rec({ location: 'Kuala Lumpur' })];
+  const verdict = classifyInput(input, candidates, ['location']);
+  assert.equal(verdict.classification, 'new');
+  assert.equal(verdict.score, 0);
+});
+
+test('location matching: identical (after punctuation strip) DOES match', () => {
+  // Sanity check that the normalizer is still in play — "Kuala Lumpur," and
+  // "Kuala Lumpur" agree after the comma is flattened.
+  const input = rec({ name: 'Jane Doe', location: 'Kuala Lumpur,' });
+  const candidates = [rec({ name: 'Jane Doe', location: 'Kuala Lumpur' })];
+  // Name + location both agree exactly → two corroborating attribute fields,
+  // promotes the verdict to duplicate (the corroboration rule).
+  const verdict = classifyInput(input, candidates, ['name', 'location']);
+  assert.equal(verdict.classification, 'duplicate');
+});
+
 test('no candidate match → NEW with no fabricated evidence', () => {
   const input = rec({ name: 'Brand New Person', email: 'new@startup.io' });
   const candidates = [rec({ name: 'Someone Else', email: 'else@other.com' })];

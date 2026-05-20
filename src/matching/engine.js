@@ -6,19 +6,25 @@
 // points drove the decision.
 //
 // Design choices:
+//  - **Strict exact-after-normalization.** Every selected criterion compares
+//    its normalized value with `===`. Normalization handles cosmetic noise
+//    (case, accents, honorifics, company suffixes, phone country code via
+//    phoneCore). Anything else — a different word, an extra word, a typo —
+//    is "not a match". No Jaro-Winkler, no token-sort, no containment.
 //  - Deterministic + explainable. No LLM in the hot path. Every score is
 //    reproducible and every decision carries its evidence (`matchedOn`).
 //  - Criteria-driven. The caller picks which fields to match on (name,
-//    email, phone, company, location); only those contribute.
+//    email, phone, company, location); only those contribute. A criterion
+//    that doesn't agree word-for-word contributes a zero, full stop.
 //  - Evidence over assumption. Nothing is inferred or fabricated — this is
 //    the Lead-Generation Contract applied to dedup: a "new" verdict means
 //    "no evidence of a match", never "probably new".
 
-import {
-  jaroWinkler,
-  tokenSortRatio,
-  tokenContainment,
-} from './similarity.js';
+// NOTE: As of the strict-exact rule, similarity primitives are no longer used
+// by the engine — every criterion compares its normalized value with `===`.
+// The primitives stay in `./similarity.js` and remain unit-tested in case a
+// future field needs fuzziness; they are intentionally NOT imported here so
+// the engine cannot accidentally fall back to fuzzy matching.
 
 // Per-field weight = how much a strong match on that field counts toward the
 // aggregate. Email and phone are near-unique identifiers and dominate; name
@@ -44,9 +50,10 @@ const EVIDENCE_FLOOR = 0.5;
 
 // "Strong identifier" fields are near-unique to a person: a confirmed match
 // on one of these is, on its own, sufficient evidence of a duplicate. The
-// fuzzy attribute fields (name, company, location) are NOT — many distinct
-// people share a similar name. A confirmed strong-identifier match is one
-// scoring at/above this bar.
+// attribute fields (name, company, location) are NOT — many distinct
+// people share a name or a city. A confirmed strong-identifier match is one
+// scoring at/above this bar. The bar accommodates phone's national-core
+// fallback (0.97 when the country code differs).
 const STRONG_IDENTIFIERS = new Set(['email', 'phone']);
 const STRONG_MATCH_BAR = 0.95;
 
@@ -67,33 +74,27 @@ function matchPhone(a, b) {
   return 0;
 }
 
+// EXACT-AFTER-NORMALIZATION matching — every selected criterion must agree
+// word-for-word once normalization has cleaned up cosmetic noise
+// (case, accents, honorifics, company suffixes, phone country code via
+// phoneCore). A partial name ("John Smith" vs "John Michael Smith") is a
+// different person until proven otherwise; "Acme" and "Acme Holdings" are
+// different companies; "KL" and "Kuala Lumpur" are different locations.
+// We never approximate — the verdict is reproducible and defensible.
+
 function matchName(a, b) {
   if (!a.name || !b.name) return 0;
-  // EXACT name matching only — no fuzzy, no token-sort, no containment.
-  // The normalized name (lowercased, accent-stripped, honorifics removed,
-  // whitespace-collapsed) must be IDENTICAL word-for-word in the SAME order.
-  // A name is not a unique identifier and letter-level overlap ("Hui Ng" vs
-  // "chung") produced false positives; a partial name ("John Smith" vs
-  // "John Michael Smith") is a different person until proven otherwise.
-  // So: 1 if the two names are literally the same string, else 0.
   return a.name === b.name ? 1 : 0;
 }
 
 function matchCompany(a, b) {
   if (!a.company || !b.company) return 0;
-  const sorted = tokenSortRatio(a.company, b.company);
-  const contained = tokenContainment(a.company, b.company) * 0.9;
-  return Math.max(sorted, contained);
+  return a.company === b.company ? 1 : 0;
 }
 
 function matchLocation(a, b) {
   if (!a.location || !b.location) return 0;
-  if (a.location === b.location) return 1;
-  // Locations are messy; a containment check ("kuala lumpur" within
-  // "kuala lumpur malaysia") plus a fuzzy fallback is enough for a weak
-  // corroborating signal.
-  const contained = tokenContainment(a.location, b.location);
-  return Math.max(contained, jaroWinkler(a.location, b.location) * 0.85);
+  return a.location === b.location ? 1 : 0;
 }
 
 const MATCHERS = {

@@ -26,6 +26,7 @@ import { decrypt } from '../utils/crypto.js';
 import { config } from '../config.js';
 import { assertSafeUrl } from './ssrf-guard.js';
 import * as vistage from './vistage.js';
+import { buildEnrichment } from '../enrich/normalize.js';
 
 const REQUEST_TIMEOUT_MS = 12_000;
 
@@ -151,6 +152,41 @@ async function probeGeneric(connector) {
   }
 }
 
+// Fetch the full DETAIL record for one matched finding via the generic
+// contract's optional ENRICH endpoint. The connected app receives the
+// matched record's own id and the canonical key fields (so an app without
+// stable ids can still resolve the person) and responds with one detail
+// object:
+//
+//   POST {base_url}{enrich_path}         default enrich_path: /records/detail
+//   body : { id, record: { ...canonical fields... } }
+//   resp : { record: { ...full detail incl. group, leader, meetings, payments... } }
+//
+// The detail object's field names need not match ours — the connector's
+// enrich_field_map (consumed by src/enrich/normalize.js) translates them.
+// Nothing is fabricated: whatever the app returns is what gets shaped.
+async function fetchDetailGeneric(connector, matchedRecord, _ctx) {
+  if (!connector.enrich_path) {
+    throw new Error(
+      'This connector has no enrich endpoint configured (set enrich_path to enable profiles).'
+    );
+  }
+  const recordId =
+    matchedRecord?.id ??
+    matchedRecord?.Id ??
+    matchedRecord?.record_id ??
+    null;
+  const data = await call(connector, connector.enrich_path, {
+    id: recordId,
+    record: matchedRecord || {},
+  });
+  const detail = data?.record || data?.detail || data || null;
+  if (!detail || typeof detail !== 'object') {
+    throw new Error('Connector enrich endpoint returned no detail record.');
+  }
+  return detail;
+}
+
 // ── kind dispatch ─────────────────────────────────────────────────────
 // The sweep orchestrator and route handlers call these; they route to the
 // adapter for the connector's kind. Adding a CRM = adding one adapter module
@@ -159,11 +195,13 @@ const ADAPTERS = {
   generic: {
     fetchCandidates: fetchCandidatesGeneric,
     createLead: createLeadGeneric,
+    fetchDetail: fetchDetailGeneric,
     probe: probeGeneric,
   },
   vistage: {
     fetchCandidates: vistage.fetchCandidates,
     createLead: vistage.createLead,
+    fetchDetail: vistage.fetchDetail,
     probe: vistage.probe,
   },
 };
@@ -203,6 +241,38 @@ export function probe(connector) {
 export function supportsLeadPush(connector) {
   const kind = connector.kind || 'generic';
   return kind === 'generic' || kind === 'vistage';
+}
+
+// Whether a connector can enrich a matched finding with a profile. Vistage
+// always can (GetDetail). A generic connector can only if it has an
+// enrich_path configured — the detail endpoint is optional in the contract.
+export function supportsEnrichment(connector) {
+  const kind = connector.kind || 'generic';
+  if (kind === 'vistage') return true;
+  if (kind === 'generic') return !!connector.enrich_path;
+  return false;
+}
+
+// Enrich one matched finding: fetch the connected app's full detail record
+// for it, then run the connector-agnostic normalizer to shape the canonical
+// enrichment object (profile, group/chair, meetings, current-calendar-year
+// payment grid, outstanding, pending). `matchedRecord` is the raw
+// connected-app record the sweep matched. `ctx` carries cross-cutting state
+// (e.g. the tenant repo) some adapters need.
+//
+// The normalizer fabricates nothing — every field is CRM-sourced or
+// rendered as `null` / `no-record`. This function is the only enrichment
+// entry point the route handler uses.
+export async function fetchEnrichment(connector, matchedRecord, ctx = {}) {
+  const adapter = adapterFor(connector);
+  if (typeof adapter.fetchDetail !== 'function') {
+    throw new Error(
+      `Connector kind "${connector.kind}" does not support enrichment.`
+    );
+  }
+  const rawDetail = await adapter.fetchDetail(connector, matchedRecord, ctx);
+  const enrichMap = safeParse(connector.enrich_field_map_json);
+  return buildEnrichment(rawDetail, enrichMap, { year: ctx.year });
 }
 
 function joinUrl(base, path) {

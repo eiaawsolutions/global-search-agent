@@ -34,6 +34,13 @@ function publicConnector(c) {
     // read-only.
     supports_lead_push:
       (c.kind || 'generic') === 'generic' || c.kind === 'vistage',
+    // Enrichment: vistage always supports it (GetDetail); a generic
+    // connector only if an enrich_path is configured. The UI uses this to
+    // decide whether to show the "View details" control on a matched finding.
+    supports_enrichment:
+      c.kind === 'vistage' ||
+      ((c.kind || 'generic') === 'generic' && !!c.enrich_path),
+    enrich_path: c.enrich_path || '',
   };
 }
 

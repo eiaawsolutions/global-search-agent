@@ -1204,6 +1204,41 @@ textarea:focus {
   }
 }
 
+/* ── Meeting attendance list (enrichment) ─────────────────────────── */
+.meet-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.meet-item {
+  display: grid;
+  grid-template-columns: 12px 110px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--panel-2, transparent);
+  font-size: 13px;
+}
+.meet-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+.meet-attended .meet-dot { background: #4ade80; }
+.meet-absent   .meet-dot { background: #f87171; }
+.meet-excused  .meet-dot { background: #fbbf24; }
+.meet-late     .meet-dot { background: #fb923c; }
+.meet-date  { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.meet-type  { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meet-state { color: var(--text-faint); font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+.meet-more  { font-size: 12px; color: var(--text-faint); margin: 6px 0 0; }
+
 /* Respect a reduced-motion preference — disable the spinner and transitions. */
 @media (prefers-reduced-motion: reduce) {
   *,

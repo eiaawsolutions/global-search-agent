@@ -5,6 +5,7 @@
 //   GET  /api/search/:id        job status + rollup counts
 //   GET  /api/search/:id/results  classified results (filterable)
 //   POST /api/results/:id/add-lead  the CTA — push a "new" record as a lead
+//   GET  /api/results/:id/enrich    fetch + cache the full detail profile
 //   GET  /api/jobs              recent jobs for this tenant
 import { Router } from 'express';
 import multer from 'multer';
@@ -12,7 +13,12 @@ import { asyncHandler } from '../middleware/auth.js';
 import { config } from '../config.js';
 import { parseCsv, parseNameList } from '../ingest/csv.js';
 import { sanitizeCriteria, runSweep } from '../sweep/orchestrator.js';
-import { createLead, supportsLeadPush } from '../connectors/client.js';
+import {
+  createLead,
+  supportsLeadPush,
+  supportsEnrichment,
+  fetchEnrichment,
+} from '../connectors/client.js';
 import { explain } from '../matching/engine.js';
 
 const router = Router();
@@ -46,6 +52,15 @@ function publicResult(row) {
     lead_status: row.lead_status,
     lead_ref: row.lead_ref || null,
     can_add_lead: row.classification === 'new' && row.lead_status === 'none',
+    // Enrichment cache state — meaningful for `duplicate` / `review` (they
+    // have a matched record to enrich). `enrichment` is the cached profile
+    // object if the finding has been enriched, else null; the UI fetches it
+    // on demand via GET /api/results/:id/enrich.
+    is_enriched: !!row.enrichment_json,
+    enriched_at: row.enriched_at || null,
+    enrichment: row.enrichment_json
+      ? safeParse(row.enrichment_json, null)
+      : null,
   };
 }
 
@@ -258,6 +273,88 @@ router.post(
       result_id: result.id,
       lead_ref: leadRef,
       lead_status: 'added',
+    });
+  })
+);
+
+// GET /api/results/:id/enrich — fetch the full DETAIL profile for a matched
+// finding. Shapes the connected app's detail record into the canonical
+// {profile, linkage (group/leader/chair), meetings, payment (12-month
+// grid), outstanding, pending} object. The result is cached on the row so
+// the CRM detail call runs once per finding. Pass ?refresh=1 to bypass.
+//
+// Lead-Generation Contract applied to enrichment: nothing is fabricated.
+// Missing scalar fields stay null; months with no source record stay
+// "no-record"; an unknown outstanding flag stays null (not false).
+router.get(
+  '/results/:id/enrich',
+  asyncHandler(async (req, res) => {
+    const result = req.repo.getResult(req.params.id);
+    if (!result) return res.status(404).json({ error: 'Result not found.' });
+
+    // A "new" result has no matched CRM record to enrich against — by design.
+    if (result.classification === 'new') {
+      return res.status(409).json({
+        error:
+          'This record is new — there is no matching CRM record to enrich.',
+      });
+    }
+    if (!result.matched_record_json) {
+      return res.status(409).json({
+        error: 'This finding has no matched record to enrich.',
+      });
+    }
+
+    // Serve the cache unless the caller explicitly asks to refresh.
+    const refresh = req.query.refresh === '1' || req.query.refresh === 'true';
+    if (result.enrichment_json && !refresh) {
+      return res.json({
+        result_id: result.id,
+        cached: true,
+        enriched_at: result.enriched_at || null,
+        enrichment: safeParse(result.enrichment_json, null),
+      });
+    }
+
+    const job = req.repo.getJob(result.job_id);
+    const connector = job ? req.repo.getConnector(job.connector_id) : null;
+    if (!connector) {
+      return res
+        .status(409)
+        .json({ error: 'Connector is no longer available.' });
+    }
+    if (!supportsEnrichment(connector)) {
+      return res.status(409).json({
+        error:
+          'This connector does not support enrichment (no detail endpoint configured).',
+      });
+    }
+
+    const matchedRecord = safeParse(result.matched_record_json, {});
+    let enrichment;
+    try {
+      enrichment = await fetchEnrichment(connector, matchedRecord, {
+        repo: req.repo,
+      });
+    } catch (err) {
+      return res.status(502).json({
+        error: `Could not enrich from the connected app: ${err.message}`,
+      });
+    }
+
+    req.repo.saveResultEnrichment(result.id, enrichment);
+    req.repo.audit('result.enriched', {
+      resultId: result.id,
+      jobId: result.job_id,
+      fieldsFound: enrichment?.meta?.fieldsFound?.length || 0,
+      fieldsMissing: enrichment?.meta?.fieldsMissing?.length || 0,
+    });
+
+    res.json({
+      result_id: result.id,
+      cached: false,
+      enriched_at: new Date().toISOString(),
+      enrichment,
     });
   })
 );

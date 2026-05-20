@@ -300,7 +300,7 @@ function rowToCanonical(row, fieldMap) {
   // A GetList row carries an inner `cell` object plus top-level name1/name2.
   const flat = { ...(row.cell || {}), ...row };
   const out = {};
-  for (const field of ['name', 'email', 'phone', 'company', 'location']) {
+  for (const field of ['email', 'phone', 'company', 'location']) {
     const mapped = fieldMap?.[field];
     let val =
       mapped && flat[mapped] != null
@@ -309,18 +309,24 @@ function rowToCanonical(row, fieldMap) {
     if (field === 'location' || field === 'company') val = deEntity(val);
     out[field] = val;
   }
-  // Vistage's Save endpoint splits `FirstName` on the first whitespace —
-  // it stores the first token in `name1` and the remainder in `name2`. So a
-  // lead we pushed as "chung wei ling" comes back with name1="chung" and
-  // name2="wei ling". For the dedup loop to close on the next sweep, the
-  // canonical name must reconstruct the full string by concatenating both.
-  // Only do this when the field-map didn't already pin a name and FullName
-  // (the picked candidate) was empty, so member rows with a real FullName
-  // are unchanged.
-  if (!out.name) {
+  // Name is handled specially. Vistage's GetList returns the name as a pair —
+  // `name1` (first whitespace token of the stored FirstName) and `name2` (the
+  // remainder). Save splits whatever we send on the first whitespace. So a
+  // lead we pushed as "chung wei ling" comes back with name1="chung",
+  // name2="wei ling". Picking either field alone loses half the name; the
+  // strict-after-normalization matcher then can't close the dedup loop.
+  // Always reconstruct from name1 + name2; fall back to FullName / Name /
+  // MemberName / ContactName / explicit field_map only when the pair is empty
+  // (older Vistage instances or non-Lead modules that surface a single field).
+  if (fieldMap?.name && flat[fieldMap.name] != null) {
+    out.name = String(flat[fieldMap.name]);
+  } else {
     const n1 = String(flat.name1 || '').trim();
     const n2 = String(flat.name2 || '').trim();
-    out.name = [n1, n2].filter(Boolean).join(' ');
+    const joined = [n1, n2].filter(Boolean).join(' ');
+    out.name =
+      joined ||
+      pick(flat, ['FullName', 'Name', 'MemberName', 'ContactName', 'display']);
   }
   return out;
 }

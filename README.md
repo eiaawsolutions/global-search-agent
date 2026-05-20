@@ -114,11 +114,10 @@ Connectors have a **kind** that selects the transport adapter:
 
 - **`generic`** (default) — the application implements the agent's fixed
   two-endpoint contract (below). Use this for apps you control.
-- **`vistage`** — a built-in adapter for the **Vistage / Claritas CRM** `.svc`
-  API. The CRM keeps its own auth and JSON shape; the adapter handles HMAC
-  signing, token caching, and `GetList` paging. **Read-only** — Vistage has no
-  contact-create endpoint, so the add-lead CTA is disabled for these
-  connectors. See [Vistage connector](#vistage-connector) below.
+- **`vistage`** — a built-in adapter for the **Vistage / Claritas CRM** Common
+  API V1 (`CommonService.svc`). The CRM keeps its own auth and JSON shape; the
+  adapter handles HMAC signing, token caching, `GetList` paging, and `Save`
+  for pushing new leads back. See [Vistage connector](#vistage-connector) below.
 
 New CRMs are added by dropping one adapter module in `src/connectors/` and
 registering it in the `ADAPTERS` map in `src/connectors/client.js`.
@@ -178,8 +177,9 @@ Respond with the created id (optional):
 
 ## Vistage connector
 
-The **Vistage / Claritas CRM** uses its own HMAC-signed `.svc` API, so it
-cannot adopt the generic contract above. Register it with `kind: "vistage"`:
+The **Vistage / Claritas CRM Common API V1** uses its own HMAC-signed `.svc`
+API, so it cannot adopt the generic contract above. Register it with
+`kind: "vistage"`:
 
 ```bash
 curl -X POST http://localhost:4100/api/connectors \
@@ -188,31 +188,41 @@ curl -X POST http://localhost:4100/api/connectors \
   -d '{
     "name": "Vistage Staging",
     "kind": "vistage",
-    "base_url": "https://teststudio.claritascrm.com/api/VistageService.svc",
+    "base_url": "https://teststudio.claritascrm.com/api/CommonService.svc",
     "vistage": {
       "client_id": "<Client ID>",
       "secret_key": "<Secret Key>",
       "username":   "<API user>",
       "password":   "<API password>"
     },
-    "modules": ["ActiveMember", "InWaitingMember", "Prospect"],
+    "user_token": {
+      "CompanyId":     3,
+      "CompanyPrefix": "VT",
+      "UserId":        "<UserId GUID>",
+      "UserModuleId":  64,
+      "UserName":      "admin"
+    },
+    "modules": ["Member", "Lead"],
+    "default_branch": "Vistage Malaysia Sdn Bhd",
     "field_map": { "name": "name2", "phone": "Mobile" }
   }'
 ```
 
 - **Auth** — the adapter signs every request with HMAC-SHA256 (`Signature 1`
   for `/token`, `Signature 2` for function calls) and caches the access token.
-- **UserToken** — `GetList` needs a `UserToken`. The adapter obtains it via
-  `UserLogin` using `username`/`password`. If your Vistage instance does not
-  provision a login for API use, supply a pre-known token at registration with
-  a `user_token` object (`{ UserId, UserName, Role }`) instead.
-- **`modules`** — which member lists to sweep. Valid: `ActiveMember`,
-  `InWaitingMember`, `LOAMember`, `TerminatedMember`, `Prospect`. Defaults to
-  `ActiveMember` + `Prospect`.
-- **`field_map`** — Vistage member rows put the name in `name2` and the phone
+- **UserToken (V1 shape)** — `GetList` and `Save` need a V1-shaped
+  `UserToken`: `{ CompanyId, CompanyPrefix, UserId, UserModuleId, UserName }`.
+  The adapter obtains it via `UserLogin` using `username`/`password`. If your
+  Vistage instance does not provision a login for API use, supply a pre-known
+  token at registration with a `user_token` object instead.
+- **`modules`** — which lists to sweep. Valid V1 modules: `Lead`, `Member`,
+  `Contact`, `Account`. Defaults to `Member` + `Lead`.
+- **`field_map`** — Vistage rows put the name in `name2` and the phone
   in `Mobile`; rows carry no email or company. Map fields to taste.
-- **Read-only** — Vistage has no contact-create endpoint, so the add-lead CTA
-  returns `409` for these connectors.
+- **`default_branch`** — sent as the `Branch` field when pushing a new lead.
+- **Lead push-back** — V1 added a `Save` endpoint for the `Lead` module, so
+  the add-lead CTA now writes a row back into Vistage with
+  `LeadStatus=New`/`Qualified=No`. Previously the CTA returned `409`.
 
 Verify connectivity against staging without touching the agent:
 

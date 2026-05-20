@@ -6,7 +6,7 @@ import { asyncHandler } from '../middleware/auth.js';
 import { encrypt } from '../utils/crypto.js';
 import { assertSafeUrlShape } from '../connectors/ssrf-guard.js';
 import { probe } from '../connectors/client.js';
-import { VISTAGE_MEMBER_MODULES } from '../connectors/vistage.js';
+import { VISTAGE_MODULES } from '../connectors/vistage.js';
 import { config } from '../config.js';
 
 const router = Router();
@@ -30,7 +30,10 @@ function publicConnector(c) {
     // Non-secret kind settings only (e.g. vistage modules). UserToken is
     // operational state — surface just whether it's resolved.
     modules: meta.modules || undefined,
-    supports_lead_push: (c.kind || 'generic') === 'generic',
+    // Vistage gained write-back in Common API V1 (Save - Lead); previously
+    // read-only.
+    supports_lead_push:
+      (c.kind || 'generic') === 'generic' || c.kind === 'vistage',
   };
 }
 
@@ -56,7 +59,9 @@ router.get(
 //   kind=generic (default) — { name, base_url, search_path, create_path,
 //     auth_type, auth_header, credential, field_map }
 //   kind=vistage           — { name, base_url, vistage:{ client_id,
-//     secret_key, username, password }, modules?, field_map? }
+//     secret_key, username, password }, user_token?:{ CompanyId,
+//     CompanyPrefix, UserId, UserModuleId, UserName }, modules?,
+//     default_branch?, field_map? }
 router.post(
   '/',
   asyncHandler(async (req, res) => {
@@ -94,23 +99,36 @@ router.post(
         userName: v.username ? String(v.username) : '',
         password: v.password ? String(v.password) : '',
       };
-      // `modules` narrows which member lists are swept; default in adapter.
+      // `modules` narrows which lists are swept; default in adapter
+      // (V1 canonical modules: Lead, Member, Contact, Account).
       const modules = Array.isArray(b.modules)
-        ? b.modules.filter((m) => VISTAGE_MEMBER_MODULES.includes(m))
+        ? b.modules.filter((m) => VISTAGE_MODULES.includes(m))
         : [];
       const meta = {};
       if (modules.length) meta.modules = modules;
+      // Optional default Branch for Save - Lead. Stored alongside modules so
+      // the createLead path picks it up without re-asking the operator.
+      if (b.default_branch) {
+        meta.defaultBranch = String(b.default_branch).slice(0, 200);
+      }
       // Optional pre-known UserToken — for Vistage instances where UserLogin
       // is not provisioned for API use and the integrator supplies the token
       // out of band. When omitted, the adapter resolves it via UserLogin.
+      // V1 shape: { CompanyId, CompanyPrefix, UserId, UserModuleId, UserName }.
       const ut = b.user_token;
       if (ut && ut.UserId && ut.UserName) {
+        const companyId = parseInt(ut.CompanyId, 10);
+        if (!Number.isFinite(companyId) || companyId <= 0) {
+          return res.status(400).json({
+            error:
+              'vistage.user_token.CompanyId is required (Common API V1 path segment).',
+          });
+        }
         meta.userToken = {
-          FirstName: ut.FirstName ?? null,
-          FullName: ut.FullName ?? null,
-          LastName: ut.LastName ?? null,
-          Role: parseInt(ut.Role, 10) || 0,
+          CompanyId: companyId,
+          CompanyPrefix: ut.CompanyPrefix ? String(ut.CompanyPrefix) : null,
           UserId: String(ut.UserId),
+          UserModuleId: parseInt(ut.UserModuleId, 10) || 0,
           UserName: String(ut.UserName),
         };
       }

@@ -239,7 +239,7 @@ router.post(
     const input = safeParse(result.input_json, {});
     let leadRef = null;
     try {
-      leadRef = await createLead(connector, input);
+      leadRef = await createLead(connector, input, { repo: req.repo });
     } catch (err) {
       return res
         .status(502)

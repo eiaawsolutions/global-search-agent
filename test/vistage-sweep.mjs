@@ -1,14 +1,16 @@
-// End-to-end Vistage integration test.
+// End-to-end Vistage integration test (Common API V1).
 //
 // Boots the full agent in-process, registers a `vistage` connector pointed at
-// a Claritas Vistage API, and runs a real sweep — proving the adapter,
-// orchestrator, and matching engine work against live Vistage data.
+// a Claritas Vistage Common API V1 endpoint, and runs a real sweep — proving
+// the adapter, orchestrator, and matching engine work against live Vistage
+// data.
 //
 // Run:  node test/vistage-sweep.mjs
 // Credentials are read from the environment ONLY — never hardcoded, so this
 // file is safe to commit. Set them first (a gitignored .env works):
 //   VISTAGE_BASE_URL, VISTAGE_CLIENT_ID, VISTAGE_SECRET_KEY,
-//   VISTAGE_USER_ID, VISTAGE_USER_NAME, VISTAGE_ROLE
+//   VISTAGE_COMPANY_ID, VISTAGE_USER_ID, VISTAGE_USER_NAME,
+//   VISTAGE_COMPANY_PREFIX (optional), VISTAGE_USER_MODULE_ID (optional)
 //
 // Not part of `npm test` — it makes live network calls.
 import crypto from 'node:crypto';
@@ -16,14 +18,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
-// Required Vistage env — fail early with a clear message.
 const REQUIRED = [
   'VISTAGE_BASE_URL',
   'VISTAGE_CLIENT_ID',
   'VISTAGE_SECRET_KEY',
+  'VISTAGE_COMPANY_ID',
   'VISTAGE_USER_ID',
   'VISTAGE_USER_NAME',
-  'VISTAGE_ROLE',
 ];
 const missing = REQUIRED.filter((k) => !process.env[k]);
 if (missing.length) {
@@ -65,13 +66,13 @@ async function api(method, p, body) {
 }
 
 async function main() {
-  console.log(`\nVistage sweep integration test → ${BASE}\n`);
+  console.log(`\nVistage sweep integration test (V1) → ${BASE}\n`);
 
   // Boot the app (applies migrations, creates the bootstrap tenant).
   await import('../src/server.js');
   await new Promise((r) => setTimeout(r, 300)); // let the listener bind
 
-  // 1. Register the Vistage connector.
+  // 1. Register the Vistage connector with a V1-shaped UserToken.
   console.log('1. POST /api/connectors  (kind=vistage)');
   const reg = await api('POST', '/api/connectors', {
     name: 'Vistage Staging',
@@ -81,13 +82,16 @@ async function main() {
       client_id: process.env.VISTAGE_CLIENT_ID,
       secret_key: process.env.VISTAGE_SECRET_KEY,
     },
-    // Staging UserLogin may not be provisioned for API use — supply the token.
+    // Staging UserLogin may not be provisioned for API use — supply the
+    // V1-shaped pre-known UserToken instead.
     user_token: {
-      Role: parseInt(process.env.VISTAGE_ROLE, 10),
+      CompanyId: parseInt(process.env.VISTAGE_COMPANY_ID, 10),
+      CompanyPrefix: process.env.VISTAGE_COMPANY_PREFIX || null,
       UserId: process.env.VISTAGE_USER_ID,
+      UserModuleId: parseInt(process.env.VISTAGE_USER_MODULE_ID, 10) || 0,
       UserName: process.env.VISTAGE_USER_NAME,
     },
-    modules: ['ActiveMember', 'InWaitingMember'],
+    modules: ['Member', 'Lead'],
   });
   if (reg.status !== 201) {
     bad(`registration failed (${reg.status}): ${JSON.stringify(reg.json)}`);
@@ -99,9 +103,9 @@ async function main() {
   if (reg.json.reachable) ok('credential probe passed (token acquired)');
   else bad(`probe note: ${reg.json.reachability_note}`);
 
-  // 2. Run a sweep. One input deliberately matches the live staging member
+  // 2. Run a sweep. One input deliberately matches a live staging row
   //    "chung"; one is a clear non-match that should classify as new.
-  console.log('2. POST /api/search  (sweep against live Vistage members)');
+  console.log('2. POST /api/search  (sweep against live Vistage data)');
   const sweep = await api('POST', '/api/search', {
     connector_id: connectorId,
     criteria: ['name'],
@@ -142,9 +146,9 @@ async function main() {
     (r) => r.input.name === 'chung'
   );
   if (matched && matched.classification !== 'new') {
-    ok('live Vistage member matched the input record');
+    ok('live Vistage row matched the input record');
   } else {
-    bad('expected "chung" to match a live member — check field mapping');
+    bad('expected "chung" to match a live row — check field mapping');
     process.exitCode = 1;
   }
 
@@ -157,7 +161,6 @@ main()
     process.exitCode = 1;
   })
   .finally(() => {
-    // Best-effort cleanup of the ephemeral DB.
     for (const ext of ['', '-wal', '-shm']) {
       try { fs.unlinkSync(tmpDb + ext); } catch {}
     }

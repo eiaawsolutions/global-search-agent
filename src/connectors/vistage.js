@@ -1,12 +1,12 @@
-// Vistage / Claritas CRM adapter.
+// Vistage / Claritas CRM adapter (Common API V1).
 //
 // The Vistage CRM exposes a SOAP-style `.svc` JSON API that does NOT implement
 // the agent's generic 2-endpoint contract. This adapter bridges the gap: it
 // signs requests, manages the access token, logs in once to obtain a
-// UserToken, and pulls member/prospect records via GetList so the matching
-// engine can compare them against the tenant's input list.
+// UserToken, pulls Lead/Member/Contact/Account records via GetList for the
+// matching engine, and pushes new leads back via Save (V1 addition).
 //
-// Auth (per the Vistage API v0.2 spec):
+// Auth (per the Vistage Common API V1 spec):
 //   client_id  header = Client ID
 //   t          header = 13-digit Unix epoch in MILLISECONDS
 //   sign       header = HMAC-SHA256 hex, UPPER CASE
@@ -14,9 +14,10 @@
 //     Signature 2 (everything)  : text = ClientID + AccessToken + t
 //     key for both = Secret Key
 //
-// This adapter is READ-ONLY. The Vistage spec has no endpoint that cleanly
-// creates a contact-style lead (SaveTargetLead is a meeting-attendance row,
-// not a contact), so createLead is intentionally unsupported.
+// Function endpoints in V1 take the CompanyId as a path segment:
+//   POST /GetList/{CompanyId}    POST /Save/{CompanyId}    POST /UserLogin
+// The adapter resolves CompanyId from the operator-supplied or UserLogin-
+// derived UserToken — there is no other source of truth.
 import crypto from 'node:crypto';
 import { decrypt } from '../utils/crypto.js';
 import { config } from '../config.js';
@@ -24,15 +25,24 @@ import { assertSafeUrl } from './ssrf-guard.js';
 
 const REQUEST_TIMEOUT_MS = 15_000;
 
-// Member modules that GetList can return contact-like records for. The
-// connector's meta.modules narrows this; default sweeps the live members.
-export const VISTAGE_MEMBER_MODULES = [
-  'ActiveMember',
-  'InWaitingMember',
-  'LOAMember',
-  'TerminatedMember',
-  'Prospect',
-];
+// Modules GetList can search per Common API V1. The connector's meta.modules
+// narrows which of these to sweep; default sweeps the contact-bearing
+// modules (Member + Lead). Field validation in routes/connectors.js rejects
+// anything not in this list.
+export const VISTAGE_MODULES = ['Lead', 'Member', 'Contact', 'Account'];
+
+// LeadStatus codes per the V1 spec (`Save - Lead`). Exposed so the route
+// handler that builds a Save payload uses the same enum the adapter knows.
+export const LEAD_STATUS = {
+  NEW: '1',
+  WARM: '2',
+  COLD: '3',
+  CONVERTED: '4',
+  NOT_INTERESTED: '7',
+  INVALID: '8',
+  NOT_SUITABLE: '9',
+  RELEASED: '10',
+};
 
 // In-process token cache, keyed by connector id. The access token is valid
 // for ~expire_time minutes; we refresh a minute early to avoid edge races.
@@ -41,7 +51,10 @@ const tokenCache = new Map(); // connectorId -> { token, expiresAt }
 
 // ── credential bundle ────────────────────────────────────────────────
 // A vistage connector stores its secrets as an encrypted JSON bundle in
-// credential_enc: { clientId, secretKey, userName, password }.
+// credential_enc: { clientId, secretKey, userName, password }. userName/
+// password are optional (used only if the operator wants UserLogin to
+// resolve the UserToken; otherwise a pre-known UserToken is supplied at
+// registration).
 function readCredentials(connector) {
   const raw = decrypt(connector.credential_enc);
   if (!raw) {
@@ -130,8 +143,6 @@ async function vistageFetch(url, { method, headers, body }) {
 }
 
 // ── access token ──────────────────────────────────────────────────────
-// Returns a valid access token, fetching a fresh one if the cache is empty
-// or near expiry.
 async function getAccessToken(connector, creds) {
   const cached = tokenCache.get(connector.id);
   if (cached && cached.expiresAt > Date.now()) return cached.token;
@@ -151,6 +162,7 @@ async function getAccessToken(connector, creds) {
   if (!token) throw new Error('Vistage /token did not return an access_token.');
 
   // expire_time is in minutes (string). Refresh 60s early; clamp sanely.
+  // Staging returns "0" sometimes — fall back to 20 minutes.
   const mins = parseInt(body.result.expire_time || '0', 10);
   const ttlMs = (Number.isFinite(mins) && mins > 0 ? mins : 20) * 60_000;
   tokenCache.set(connector.id, {
@@ -160,10 +172,12 @@ async function getAccessToken(connector, creds) {
   return token;
 }
 
-// Authenticated POST to a function endpoint, signed with Signature 2.
-async function postFunction(connector, creds, accessToken, fnName, payload) {
+// Authenticated POST to a function endpoint, signed with Signature 2. The
+// V1 function endpoints take the CompanyId as a path segment, except
+// UserLogin which is company-agnostic.
+async function postFunction(connector, creds, accessToken, fnPath, payload) {
   const t = String(Date.now());
-  const url = joinUrl(connector.base_url, fnName);
+  const url = joinUrl(connector.base_url, fnPath);
   return vistageFetch(url, {
     method: 'POST',
     headers: {
@@ -177,34 +191,38 @@ async function postFunction(connector, creds, accessToken, fnName, payload) {
 }
 
 // ── user token ────────────────────────────────────────────────────────
-// GetList / GetDetail require a UserToken obtained from UserLogin. We resolve
-// it once and cache it on the connector's meta_json (non-secret) so later
-// sweeps skip the extra round-trip.
+// GetList / Save all require a V1-shaped UserToken:
+//   { CompanyId, CompanyPrefix, UserId, UserModuleId, UserName }
+// We resolve it once and cache it on the connector's meta_json (non-secret)
+// so later sweeps skip the extra round-trip.
 async function resolveUserToken(connector, creds, accessToken, repo) {
   const meta = safeParse(connector.meta_json);
-  if (meta.userToken && meta.userToken.UserId) return meta.userToken;
+  if (meta.userToken && meta.userToken.UserId && meta.userToken.CompanyId) {
+    return meta.userToken;
+  }
 
   if (!creds.userName || !creds.password) {
     throw new Error(
-      'Vistage connector needs userName + password to obtain a UserToken.'
+      'Vistage connector needs userName + password (or a pre-known user_token) to obtain a UserToken.'
     );
   }
-  const login = await postFunction(connector, creds, accessToken, 'UserLogin', {
-    UserName: creds.userName,
-    Password: creds.password,
-  });
+  const login = await postFunction(
+    connector,
+    creds,
+    accessToken,
+    'UserLogin',
+    { UserName: creds.userName, Password: creds.password }
+  );
   const d = login?.data;
   if (!d || !d.UserId) {
     throw new Error('Vistage UserLogin did not return a user.');
   }
-  const userToken = {
-    FirstName: d.FirstName ?? null,
-    FullName: d.FullName ?? null,
-    LastName: d.LastName ?? null,
-    Role: parseInt(d.RoleId, 10) || 0,
-    UserId: d.UserId,
-    UserName: d.UserName,
-  };
+  const userToken = userTokenFromLogin(d);
+  if (!userToken.CompanyId) {
+    throw new Error(
+      'Vistage UserLogin response is missing CompanyId — supply user_token at registration.'
+    );
+  }
   // Persist the resolved token (non-secret) for subsequent sweeps.
   if (repo && typeof repo.updateConnectorMeta === 'function') {
     meta.userToken = userToken;
@@ -213,13 +231,32 @@ async function resolveUserToken(connector, creds, accessToken, repo) {
   return userToken;
 }
 
+// Shape a UserLogin response into the V1 UserToken. Field names vary across
+// Claritas instances; try the most common candidates and fall back to nulls
+// so the caller can spot a missing piece.
+function userTokenFromLogin(d) {
+  return {
+    CompanyId: parseInt(d.CompanyId ?? d.companyId ?? d.CompanyID, 10) || 0,
+    CompanyPrefix: d.CompanyPrefix ?? d.companyPrefix ?? null,
+    UserId: d.UserId,
+    UserModuleId:
+      parseInt(d.UserModuleId ?? d.userModuleId ?? d.UserModuleID, 10) || 0,
+    UserName: d.UserName,
+  };
+}
+
+function companyIdFor(userToken) {
+  const id = parseInt(userToken?.CompanyId, 10);
+  return Number.isFinite(id) && id > 0 ? id : 0;
+}
+
 // ── candidate mapping ─────────────────────────────────────────────────
 // Vistage GetList rows are { id, name1, name2, cell:{...} }. Field order
-// below reflects the ACTUAL staging member-row shape (verified against
-// teststudio.claritascrm.com): the member's name lands in `name2`, the phone
-// in `Mobile`. Member rows carry no email or company — those only appear via
-// GetDetail. The connector's field_map (if supplied) overrides this.
-// Nothing is fabricated — a field with no source value stays empty.
+// below reflects the staging row shape verified against
+// teststudio.claritascrm.com: contact name lands in `name2`, phone in
+// `cell.Mobile`. Member rows carry no email or company at the row level.
+// The connector's field_map (if supplied) overrides this. Nothing is
+// fabricated — a field with no source value stays empty.
 const FIELD_CANDIDATES = {
   name: ['FullName', 'name2', 'name1', 'Name', 'MemberName', 'ContactName'],
   email: ['Email', 'EmailAddress', 'Email1'],
@@ -261,17 +298,15 @@ function rowToCanonical(row, fieldMap) {
     if (field === 'location' || field === 'company') val = deEntity(val);
     out[field] = val;
   }
-  // Fall back to the row's display name if nothing else gave us a name.
   if (!out.name) out.name = pick(flat, ['name1', 'name2', 'display']);
   return out;
 }
 
 // ── public API (matches the generic client surface) ───────────────────
 
-// Fetch candidate records for one input query. The Vistage API has no
-// targeted search, so the adapter pulls the configured member modules once,
-// caches them for the duration of the sweep, and lets the matching engine
-// do the comparison. Caching is keyed per connector + token generation.
+// Fetch candidate records for one input query. Vistage has no targeted
+// search, so the adapter pulls the configured modules once, caches them for
+// the duration of the sweep, and lets the matching engine do the comparison.
 const listCache = new Map(); // connectorId -> { rows, expiresAt }
 
 export async function fetchCandidates(
@@ -294,27 +329,44 @@ export async function fetchCandidates(
     accessToken,
     ctx.repo
   );
+  const companyId = companyIdFor(userToken);
+  if (!companyId) {
+    throw new Error(
+      'Vistage UserToken is missing CompanyId — cannot build the GetList path.'
+    );
+  }
 
   const meta = safeParse(connector.meta_json);
   const modules =
     Array.isArray(meta.modules) && meta.modules.length
-      ? meta.modules.filter((m) => VISTAGE_MEMBER_MODULES.includes(m))
-      : ['ActiveMember', 'Prospect'];
+      ? meta.modules.filter((m) => VISTAGE_MODULES.includes(m))
+      : ['Member', 'Lead'];
   const fieldMap = safeParse(connector.field_map_json);
+
+  // SearchParams defaults to the V1 example — active records only (RecStatus
+  // = 2). Operators can override by setting meta.searchParams on the
+  // connector; we never hardcode it, just supply the documented default.
+  const searchParams = Array.isArray(meta.searchParams)
+    ? meta.searchParams
+    : [{ SearchField: 'RecStatus', SearchVal: '2', SearchVal2: '' }];
 
   const rows = [];
   for (const module of modules) {
-    // PageNo/RecordPerPage = 0 returns the full set per the spec examples.
-    const resp = await postFunction(connector, creds, accessToken, 'GetList', {
-      Module: module,
-      PageNo: 0,
-      Record: null,
-      RecordPerPage: 0,
-      SearchParams: [],
-      SortName: 'CreatedTS',
-      SortOrder: 2,
-      UserToken: userToken,
-    });
+    const resp = await postFunction(
+      connector,
+      creds,
+      accessToken,
+      `GetList/${companyId}`,
+      {
+        Module: module,
+        PageNo: 0,
+        RecordPerPage: 0,
+        SearchParams: searchParams,
+        SortName: 'CreatedTS',
+        SortOrder: 2,
+        UserToken: userToken,
+      }
+    );
     const list = Array.isArray(resp?.data?.rows) ? resp.data.rows : [];
     for (const r of list) {
       rows.push({
@@ -333,15 +385,80 @@ export async function fetchCandidates(
   return rows.slice(0, limit);
 }
 
-// Read-only connector: lead push-back is not supported by the Vistage API.
-export async function createLead() {
-  throw new Error(
-    'Lead creation is not supported for Vistage connectors (read-only).'
+// Create a Lead via Save (V1 addition). Maps the agent's canonical lead
+// fields onto the Vistage Lead module's fields. The route handler passes
+// the canonical input (name/email/phone/company/location); we split `name`
+// into FirstName/LastName best-effort, and default LeadStatus=New and
+// Qualified=No so nothing the CRM treats as a positive signal is
+// fabricated. Branch falls back to the connector's meta.defaultBranch.
+//
+// Returns the new lead's id when the API surfaces one; null otherwise. The
+// route handler still records `lead_status='added'` so the CTA is idempotent.
+export async function createLead(connector, lead, ctx = {}) {
+  if (!lead || typeof lead !== 'object') {
+    throw new Error('createLead requires a canonical lead object.');
+  }
+
+  const creds = readCredentials(connector);
+  const accessToken = await getAccessToken(connector, creds);
+  const userToken = await resolveUserToken(
+    connector,
+    creds,
+    accessToken,
+    ctx.repo
   );
+  const companyId = companyIdFor(userToken);
+  if (!companyId) {
+    throw new Error(
+      'Vistage UserToken is missing CompanyId — cannot build the Save path.'
+    );
+  }
+
+  const { first, last } = splitName(lead.name);
+  const meta = safeParse(connector.meta_json);
+  const data = {
+    LeadStatus: LEAD_STATUS.NEW,
+    Qualified: '0',
+    FirstName: first || '',
+    LastName: last || '',
+    Branch: meta.defaultBranch || '',
+    Mobile: lead.phone || '',
+    Email: lead.email || '',
+    Company: lead.company || '',
+    UserToken: userToken,
+  };
+
+  const resp = await postFunction(
+    connector,
+    creds,
+    accessToken,
+    `Save/${companyId}`,
+    { Module: 'Lead', data }
+  );
+
+  // V1 spec shows the request shape but not the response shape; check the
+  // common Claritas response keys for the new row id. If none surface, the
+  // route handler records null and the audit still notes the push.
+  const newId =
+    resp?.data?.id ??
+    resp?.data?.RecordId ??
+    resp?.result?.id ??
+    resp?.id ??
+    null;
+  return newId != null ? String(newId) : null;
 }
 
-// Connectivity probe used at registration time: authenticate + log in.
-// Proves the credential bundle and the staging URL are both good.
+function splitName(name) {
+  const s = String(name || '').trim();
+  if (!s) return { first: '', last: '' };
+  const parts = s.split(/\s+/);
+  if (parts.length === 1) return { first: parts[0], last: '' };
+  return { first: parts[0], last: parts.slice(1).join(' ') };
+}
+
+// Connectivity probe used at registration time: authenticate + (if
+// userName/password supplied) log in. Proves the credential bundle and the
+// base URL are both good.
 export async function probe(connector) {
   try {
     const creds = readCredentials(connector);

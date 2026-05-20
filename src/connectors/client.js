@@ -123,7 +123,8 @@ async function fetchCandidatesGeneric(connector, query, criteria, limit = 200) {
 
 // Push one new lead via the generic contract. Called only from the add-lead
 // CTA handler — never automatically. Returns the app-side id if provided.
-async function createLeadGeneric(connector, lead) {
+// The generic adapter ignores ctx; vistage uses it for the UserToken repo.
+async function createLeadGeneric(connector, lead, _ctx) {
   const data = await call(connector, connector.create_path, {
     lead: {
       name: lead.name || '',
@@ -185,10 +186,11 @@ export function fetchCandidates(connector, query, criteria, limit = 200, ctx) {
   );
 }
 
-// Push one new lead. Generic connectors write back; some kinds (vistage) are
-// read-only and will throw — the route handler surfaces that to the user.
-export function createLead(connector, lead) {
-  return adapterFor(connector).createLead(connector, lead);
+// Push one new lead. Generic connectors POST to the contract's create_path;
+// vistage (Common API V1) calls Save - Lead. `ctx` carries cross-cutting
+// state (e.g. the tenant repo) so the adapter can resolve a cached UserToken.
+export function createLead(connector, lead, ctx) {
+  return adapterFor(connector).createLead(connector, lead, ctx || {});
 }
 
 // Reachability / credential probe at registration time.
@@ -196,9 +198,11 @@ export function probe(connector) {
   return adapterFor(connector).probe(connector);
 }
 
-// Whether a connector kind supports the add-lead CTA at all.
+// Whether a connector kind supports the add-lead CTA at all. Vistage gained
+// lead push in Common API V1 (Save endpoint); previously it was read-only.
 export function supportsLeadPush(connector) {
-  return (connector.kind || 'generic') === 'generic';
+  const kind = connector.kind || 'generic';
+  return kind === 'generic' || kind === 'vistage';
 }
 
 function joinUrl(base, path) {

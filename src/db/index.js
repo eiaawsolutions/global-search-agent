@@ -322,8 +322,8 @@ export function forTenant(tenantId, webhookSecret = null) {
       const stmt = db.prepare(
         `INSERT INTO search_results
           (id, job_id, tenant_id, input_json, classification, score,
-           matched_record_json, matched_on_json)
-         VALUES (?,?,?,?,?,?,?,?)`
+           matched_record_json, matched_on_json, error)
+         VALUES (?,?,?,?,?,?,?,?,?)`
       );
       const tx = db.transaction((items) => {
         for (const r of items) {
@@ -335,7 +335,8 @@ export function forTenant(tenantId, webhookSecret = null) {
             r.classification,
             r.score,
             r.matchedRecord ? JSON.stringify(r.matchedRecord) : null,
-            JSON.stringify(r.matchedOn || [])
+            JSON.stringify(r.matchedOn || []),
+            r.error || null
           );
         }
       });

@@ -224,8 +224,18 @@ export function classifyInput(input, candidates, criteria) {
 }
 
 // A human-readable one-liner explaining a verdict — surfaced in the UI and
-// API so the user sees *why*, not just *what*.
+// API so the user sees *why*, not just *what*. Three honest outcomes:
+//
+//   1. `new` with an error attached → the lookup failed; surface the reason.
+//   2. `new` with no error          → no matching record found.
+//   3. `duplicate` / `review`       → strict per-criterion match list.
+//
+// Under strict-exact matching every per-field score is binary (0 or 1, plus
+// phone's 0.97 country-core fallback) — there are no "weak signals" any
+// more. If a verdict reaches duplicate/review, matchedOn names the exact
+// fields that agreed; we never invent a phrase when the list is empty.
 export function explain(result) {
+  if (result.error) return result.error;
   if (result.classification === 'new') {
     return 'No matching record found in the connected database.';
   }
@@ -233,7 +243,12 @@ export function explain(result) {
     .map((m) => `${m.field} (${Math.round(m.score * 100)}%)`)
     .join(', ');
   const verb = result.classification === 'duplicate' ? 'Duplicate' : 'Possible match';
-  return `${verb} — matched on ${points || 'weak signals'}.`;
+  // Defensive: a duplicate/review verdict should always carry evidence.
+  // If we somehow got here without any, name that honestly rather than
+  // inventing "weak signals".
+  return points
+    ? `${verb} — matched on ${points}.`
+    : `${verb} — no per-field evidence recorded.`;
 }
 
 function round(n) {

@@ -11,7 +11,7 @@ import {
   normalizeRecord,
 } from '../src/matching/normalize.js';
 import { jaroWinkler, levenshteinSim, tokenSortRatio } from '../src/matching/similarity.js';
-import { classifyInput, scorePair } from '../src/matching/engine.js';
+import { classifyInput, scorePair, explain } from '../src/matching/engine.js';
 
 // Helper: normalize a plain record into the engine's expected shape.
 const rec = (r) => {
@@ -236,4 +236,47 @@ test('empty input on all criteria scores zero (no false match)', () => {
   const candidates = [rec({ name: 'Jane', email: 'jane@acme.com' })];
   const { aggregate } = scorePair(input, candidates[0], ['email', 'phone']);
   assert.equal(aggregate, 0);
+});
+
+// ── explain() — three honest states, never "weak signals" ───────────
+test('explain() surfaces the error reason when one is attached', () => {
+  // The error path (connector lookup failed, no data on any criterion, etc.)
+  // must surface the real reason verbatim — no misleading "matched on weak
+  // signals" wording. Operator sees what to fix.
+  const msg = explain({
+    classification: 'new',
+    matchedOn: [],
+    error: 'Lookup failed against the connected app: UserToken missing CompanyId.',
+  });
+  assert.match(msg, /UserToken missing CompanyId/);
+  assert.doesNotMatch(msg, /weak signals/i);
+});
+
+test('explain() reports "no matching record" for an honest new verdict', () => {
+  const msg = explain({ classification: 'new', matchedOn: [], error: null });
+  assert.match(msg, /no matching record/i);
+});
+
+test('explain() lists the matched fields for a duplicate verdict', () => {
+  const msg = explain({
+    classification: 'duplicate',
+    matchedOn: [{ field: 'email', score: 1 }, { field: 'name', score: 1 }],
+  });
+  assert.match(msg, /^Duplicate — matched on email \(100%\), name \(100%\)\.$/);
+});
+
+test('explain() never says "weak signals" — the phrase is banned', () => {
+  // Belt-and-braces: try every plausible verdict shape and assert the old
+  // wording is gone everywhere.
+  const cases = [
+    { classification: 'new', matchedOn: [] },
+    { classification: 'new', matchedOn: [], error: 'boom' },
+    { classification: 'duplicate', matchedOn: [{ field: 'email', score: 1 }] },
+    { classification: 'review', matchedOn: [{ field: 'name', score: 1 }] },
+    // Defensive: a duplicate without evidence should not invent a phrase.
+    { classification: 'duplicate', matchedOn: [] },
+  ];
+  for (const v of cases) {
+    assert.doesNotMatch(explain(v), /weak signals/i, JSON.stringify(v));
+  }
 });

@@ -8,6 +8,9 @@ data/
 npm-debug.log*
 coverage/
 
+# AI-agent runtime artifacts (scheduled-task locks, ephemeral state).
+.claude/
+
 # Binary reference material — kept locally, not in the repo. The Vistage
 # API PDF in particular carries integration details that must not be
 # committed to version history.

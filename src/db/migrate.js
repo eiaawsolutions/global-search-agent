@@ -30,6 +30,13 @@ function applyColumnMigrations(silent) {
       ddl: `ALTER TABLE search_results ADD COLUMN enrichment_json TEXT` },
     { table: 'search_results', column: 'enriched_at',
       ddl: `ALTER TABLE search_results ADD COLUMN enriched_at TEXT` },
+    // Per-record error reason — when the connector lookup failed for this
+    // input record, the orchestrator records the reason here. NULL on a
+    // healthy result. Surfaces in the UI as a red note so the operator
+    // sees the real cause (e.g. "Vistage UserToken missing CompanyId")
+    // instead of a misleading "matched on weak signals".
+    { table: 'search_results', column: 'error',
+      ddl: `ALTER TABLE search_results ADD COLUMN error TEXT` },
   ];
   for (const m of pending) {
     const cols = db.prepare(`PRAGMA table_info(${m.table})`).all();

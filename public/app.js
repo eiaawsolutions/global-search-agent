@@ -365,7 +365,11 @@ function resultCard(r) {
   body.appendChild(name);
 
   if (r.explanation) {
-    const says = el('p', 'finding-says');
+    // An `error` on the result means the sweep couldn't complete the lookup
+    // for this record. Render it as a red, prominent note so the operator
+    // sees the actual reason (e.g. "Vistage UserToken missing CompanyId")
+    // — never as a misleading "matched on weak signals".
+    const says = el('p', r.error ? 'finding-says finding-error' : 'finding-says');
     says.textContent = r.explanation;
     body.appendChild(says);
   }
@@ -404,12 +408,22 @@ function resultCard(r) {
   }
 
   // The action — only on a newly-found record, and link-styled, never a slab.
+  // When the result has an `error` we suppress the CTA: we never confirmed
+  // the record is genuinely new, so pushing it could create a duplicate in
+  // the connected app.
   if (r.classification === 'new') {
     const act = el('div', 'finding-act');
     if (r.lead_status === 'added') {
       const flag = el('span', 'kept-flag');
       flag.textContent =
         'Added to lead listing' + (r.lead_ref ? ` · ref ${r.lead_ref}` : '');
+      act.appendChild(flag);
+    } else if (r.error) {
+      // The CRM lookup never completed for this row, so we can't claim it
+      // is new. Disabled CTA + an honest aside, instead of letting the
+      // operator push a possibly-duplicate record.
+      const flag = el('span', 'kept-flag kept-flag-blocked');
+      flag.textContent = 'Re-sweep after fixing the connector to enable lead push.';
       act.appendChild(flag);
     } else {
       const btn = el('button', 'link-action');

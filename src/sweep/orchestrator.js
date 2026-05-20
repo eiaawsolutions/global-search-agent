@@ -41,8 +41,9 @@ async function processRecord(connector, rawRecord, criteria, ctx) {
   }
 
   // If the input has no value for ANY selected criterion it cannot be
-  // matched — classify as new (with no fabricated evidence) and skip the
-  // network call entirely.
+  // matched — classify as new with the honest reason and skip the network
+  // call entirely. Setting `error` flags the UI to disable the add-lead
+  // CTA (we can't say it's safely new — we never even looked).
   if (Object.keys(query).length === 0) {
     return {
       input: input.raw,
@@ -50,7 +51,7 @@ async function processRecord(connector, rawRecord, criteria, ctx) {
       score: 0,
       matchedRecord: null,
       matchedOn: [],
-      note: 'No data on any selected criterion.',
+      error: 'No data on any selected criterion — nothing to match against.',
     };
   }
 
@@ -64,14 +65,18 @@ async function processRecord(connector, rawRecord, criteria, ctx) {
     });
   } catch (err) {
     // A connector failure for one record must not abort the whole job.
-    // Surface it as a per-record error rather than a silent "new".
+    // Surface it on the result card as an honest error so the operator
+    // sees the real reason and can fix the connector — NOT a misleading
+    // "review — matched on weak signals". The result is classified as
+    // `new` (no evidence of a match) but with `error` set so the UI
+    // disables the add-lead CTA (we never confirmed the record is new).
     return {
       input: input.raw,
-      classification: 'review',
+      classification: 'new',
       score: 0,
       matchedRecord: null,
       matchedOn: [],
-      note: `Connector lookup failed: ${err.message}`,
+      error: `Lookup failed against the connected app: ${err.message}`,
     };
   }
 

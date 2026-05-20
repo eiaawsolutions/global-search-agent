@@ -543,6 +543,17 @@ textarea:focus {
   color: var(--text-dim);
   margin-top: 4px;
 }
+/* When the result carries a lookup error, the explanation IS the error
+   message — render it prominently so the operator sees the real reason
+   instead of a misleading "weak signals" hint. */
+.finding-says.finding-error {
+  color: #fca5a5;
+  background: rgba(220, 38, 38, 0.08);
+  border-left: 2px solid #f87171;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 12.5px;
+}
 
 /* Evidence ledger */
 .evidence {
@@ -623,6 +634,10 @@ textarea:focus {
 .kept-flag {
   font-size: 12px;
   color: var(--accent);
+}
+.kept-flag-blocked {
+  color: var(--text-faint);
+  font-style: italic;
 }
 .link-action {
   background: none;

@@ -42,16 +42,26 @@ function publicResult(row) {
     input: safeParse(row.input_json, {}),
     classification: row.classification,
     score: row.score,
-    explanation: explain(verdict),
+    // explain() reads `error` first, then falls through to classification.
+    explanation: explain({ ...verdict, error: row.error || null }),
+    // Per-record error — surfaces the connector-lookup failure reason or
+    // the "no data on any criterion" case. NULL on a healthy result.
+    error: row.error || null,
     matched_record: row.matched_record_json
       ? safeParse(row.matched_record_json, null)
       : null,
     // The exact data points that made this a duplicate.
     matched_on: matchedOn,
-    // CTA state — only meaningful for `new` results.
+    // CTA state — only meaningful for `new` results. An `error` flag means
+    // we couldn't confirm the record is genuinely new (we never reached the
+    // CRM, or had no field to match on); the CTA must stay disabled until
+    // the operator fixes the connector and re-sweeps.
     lead_status: row.lead_status,
     lead_ref: row.lead_ref || null,
-    can_add_lead: row.classification === 'new' && row.lead_status === 'none',
+    can_add_lead:
+      row.classification === 'new' &&
+      row.lead_status === 'none' &&
+      !row.error,
     // Enrichment cache state — meaningful for `duplicate` / `review` (they
     // have a matched record to enrich). `enrichment` is the cached profile
     // object if the finding has been enriched, else null; the UI fetches it
@@ -235,6 +245,18 @@ router.post(
       return res
         .status(409)
         .json({ error: 'This lead has already been added.' });
+    }
+    // If this result was classified `new` because the CRM lookup FAILED (not
+    // because nothing matched), we never confirmed the record is actually
+    // new — pushing it would risk creating a duplicate in the CRM. Block
+    // the CTA until the operator fixes the connector and re-sweeps.
+    if (result.error) {
+      return res.status(409).json({
+        error:
+          'Cannot push this record as a lead — the original sweep had a ' +
+          'lookup error, so we never confirmed it is new. Re-sweep after ' +
+          'fixing the connector.',
+      });
     }
 
     const job = req.repo.getJob(result.job_id);

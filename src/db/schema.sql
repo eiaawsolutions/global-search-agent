@@ -105,6 +105,11 @@ CREATE TABLE IF NOT EXISTS search_results (
   -- inside is CRM-sourced.
   enrichment_json TEXT,
   enriched_at    TEXT,                         -- when enrichment_json was populated
+  -- Per-record error reason — when the connector lookup or matcher failed
+  -- for this input record, the orchestrator records the reason here. NULL
+  -- on a healthy result. Surfaces in the UI so the operator sees the real
+  -- cause instead of a misleading "matched on weak signals".
+  error          TEXT,
   created_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_results_job ON search_results(job_id, classification);

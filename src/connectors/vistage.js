@@ -309,7 +309,19 @@ function rowToCanonical(row, fieldMap) {
     if (field === 'location' || field === 'company') val = deEntity(val);
     out[field] = val;
   }
-  if (!out.name) out.name = pick(flat, ['name1', 'name2', 'display']);
+  // Vistage's Save endpoint splits `FirstName` on the first whitespace —
+  // it stores the first token in `name1` and the remainder in `name2`. So a
+  // lead we pushed as "chung wei ling" comes back with name1="chung" and
+  // name2="wei ling". For the dedup loop to close on the next sweep, the
+  // canonical name must reconstruct the full string by concatenating both.
+  // Only do this when the field-map didn't already pin a name and FullName
+  // (the picked candidate) was empty, so member rows with a real FullName
+  // are unchanged.
+  if (!out.name) {
+    const n1 = String(flat.name1 || '').trim();
+    const n2 = String(flat.name2 || '').trim();
+    out.name = [n1, n2].filter(Boolean).join(' ');
+  }
   return out;
 }
 
@@ -494,6 +506,14 @@ export async function createLead(connector, lead, ctx = {}) {
     `Save/${companyId}`,
     { Module: 'Lead', data, UserToken: userToken }
   );
+
+  // The connector-scoped GetList cache (2-minute TTL) is now stale — the
+  // newly-saved row won't appear in subsequent sweeps until it expires. Bust
+  // it on every successful Save so the next sweep refetches and sees the
+  // record. Without this, the operator's "did my push actually land?" check
+  // (re-sweep the same name → expect duplicate/review) silently fails for
+  // ~2 minutes after every Add-to-lead-listing click.
+  listCache.delete(connector.id);
 
   // V1 spec shows the request shape but not the response shape; check the
   // common Claritas response keys for the new row id. If none surface, the

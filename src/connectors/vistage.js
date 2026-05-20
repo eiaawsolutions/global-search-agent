@@ -397,65 +397,38 @@ export async function fetchCandidates(
 }
 
 // ── enrichment (GetDetail) ────────────────────────────────────────────
-// Pull the full DETAIL record for ONE matched row so the enrichment
-// normalizer can build a profile / group / meeting / payment view.
-// V1 GetDetail takes the CompanyId as a path segment and a body of
-//   { Module, RecordId, UserToken }
-// where Module is whichever V1 module the matched row came from (we
-// stamped it onto the raw row as `_vistage_module` during the sweep).
+// Resolve the DETAIL view of one matched row for the enrichment normalizer
+// (profile / group / leader / meetings / payments / outstanding).
 //
-// Returns the raw detail object exactly as the CRM gave it — the
-// normalizer (src/enrich/normalize.js), not this adapter, decides what
-// to surface. Nothing is fabricated: if GetDetail returns no payment
-// block, the normalizer renders "no-record" months, never "paid".
-export async function fetchDetail(connector, matchedRecord, ctx = {}) {
-  const recordId =
-    matchedRecord?.id ??
-    matchedRecord?.Id ??
-    matchedRecord?.RecordId ??
-    matchedRecord?.MemberId;
-  if (!recordId) {
+// Vistage Common API V1 does NOT expose a GetDetail endpoint — the PDF only
+// documents /token, /GetList, and /Save. GetList already returns every cell
+// field we need, including the nested `cell` block. So the V1 path is: use
+// what the sweep already retrieved. No extra HTTP call, no extra token spend,
+// no 404 from a non-existent endpoint.
+//
+// If a future Common API version exposes GetDetail (or Vistage ships a
+// Profile endpoint), the right place to add it is here — gated on a feature
+// flag in meta_json, e.g. meta.detailEndpoint. For now, we trust GetList.
+export async function fetchDetail(connector, matchedRecord, _ctx = {}) {
+  if (!matchedRecord || typeof matchedRecord !== 'object') {
     throw new Error(
-      'Vistage enrichment needs the RecordId, which is missing from the matched row.'
-    );
-  }
-  const module = matchedRecord?._vistage_module || 'Member';
-
-  const creds = readCredentials(connector);
-  const accessToken = await getAccessToken(connector, creds);
-  const userToken = await resolveUserToken(
-    connector,
-    creds,
-    accessToken,
-    ctx.repo
-  );
-  const companyId = companyIdFor(userToken);
-  if (!companyId) {
-    throw new Error(
-      'Vistage UserToken is missing CompanyId — cannot build the GetDetail path.'
+      'Vistage enrichment needs the matched record — none was supplied.'
     );
   }
 
-  const resp = await postFunction(
-    connector,
-    creds,
-    accessToken,
-    `GetDetail/${companyId}`,
-    {
-      Module: module,
-      RecordId: String(recordId),
-      UserToken: userToken,
-    }
-  );
+  // Flatten the GetList shape: top-level columns + the inner `cell` block.
+  // The normalizer expects one flat object so its field map sees everything
+  // at the same level. Keep the module hint so downstream callers can tell
+  // a Member-derived detail from a Lead-derived one.
+  const flat = { ...(matchedRecord.cell || {}), ...matchedRecord };
+  delete flat.cell;
 
-  // GetDetail nests the record under `data` (sometimes `data.detail`).
-  const detail = resp?.data?.detail || resp?.data || resp?.result || null;
-  if (!detail || typeof detail !== 'object') {
-    throw new Error('Vistage GetDetail returned no record for that id.');
+  if (Object.keys(flat).length === 0) {
+    throw new Error(
+      'Vistage matched record has no cell payload to enrich from.'
+    );
   }
-  // Flatten an inner `cell` object the same way GetList rows do, so the
-  // enrich field map sees a single flat object.
-  return { ...(detail.cell || {}), ...detail };
+  return flat;
 }
 
 // Create a Lead via Save (V1 addition). Maps the agent's canonical lead

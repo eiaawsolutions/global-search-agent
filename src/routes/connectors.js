@@ -16,6 +16,8 @@ const CONNECTOR_KINDS = ['generic', 'vistage'];
 // Strip secret-bearing fields from a connector row before returning it.
 function publicConnector(c) {
   const meta = safeParse(c.meta_json);
+  const fieldMap = safeParse(c.field_map_json);
+  const enrichFieldMap = safeParse(c.enrich_field_map_json);
   return {
     id: c.id,
     name: c.name,
@@ -27,6 +29,10 @@ function publicConnector(c) {
     status: c.status,
     created_at: c.created_at,
     has_credential: !!c.credential_enc,
+    field_map: Object.keys(fieldMap).length ? fieldMap : undefined,
+    enrich_field_map: Object.keys(enrichFieldMap).length
+      ? enrichFieldMap
+      : undefined,
     // Non-secret kind settings only (e.g. vistage modules). UserToken is
     // operational state — surface just whether it's resolved.
     modules: meta.modules || undefined,
@@ -64,11 +70,12 @@ router.get(
 //
 // Two shapes, selected by `kind`:
 //   kind=generic (default) — { name, base_url, search_path, create_path,
-//     auth_type, auth_header, credential, field_map }
+//     auth_type, auth_header, credential, field_map, enrich_path,
+//     enrich_field_map }
 //   kind=vistage           — { name, base_url, vistage:{ client_id,
 //     secret_key, username, password }, user_token?:{ CompanyId,
 //     CompanyPrefix, UserId, UserModuleId, UserName }, modules?,
-//     default_branch?, field_map? }
+//     default_branch?, field_map?, enrich_field_map? }
 router.post(
   '/',
   asyncHandler(async (req, res) => {
@@ -90,6 +97,10 @@ router.post(
 
     const fieldMap =
       b.field_map && typeof b.field_map === 'object' ? b.field_map : {};
+    const enrichFieldMap =
+      b.enrich_field_map && typeof b.enrich_field_map === 'object'
+        ? b.enrich_field_map
+        : {};
 
     let connectorInput;
     if (kind === 'vistage') {
@@ -145,6 +156,7 @@ router.post(
         base_url: String(b.base_url).slice(0, 500),
         credential_enc: encrypt(JSON.stringify(bundle)),
         field_map_json: JSON.stringify(fieldMap),
+        enrich_field_map_json: JSON.stringify(enrichFieldMap),
         meta_json: JSON.stringify(meta),
       };
     } else {
@@ -166,6 +178,7 @@ router.post(
           : undefined,
         credential_enc: b.credential ? encrypt(String(b.credential)) : '',
         field_map_json: JSON.stringify(fieldMap),
+        enrich_field_map_json: JSON.stringify(enrichFieldMap),
       };
     }
 

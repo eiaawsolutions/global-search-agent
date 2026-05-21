@@ -155,6 +155,14 @@ connector and the agent translates them:
 { "field_map": { "name": "full_name", "email": "email_address", "company": "org" } }
 ```
 
+For enrichment/detail lookups, also supply an **enrich_field_map** that
+maps the connected app's exact detail-record field names to the normalizer's
+canonical concepts:
+
+```json
+{ "enrich_field_map": { "group": ["Group"], "chair": ["Chair"] } }
+```
+
 ### 2. Create-lead endpoint — receive a new lead
 
 Called **only** when a user clicks "Add to lead listing" on a `new` result —
@@ -204,7 +212,8 @@ curl -X POST http://localhost:4100/api/connectors \
     },
     "modules": ["Member", "Lead"],
     "default_branch": "Vistage Malaysia Sdn Bhd",
-    "field_map": { "name": "name2", "phone": "Mobile" }
+    "field_map": { "name": "name2", "phone": "Mobile" },
+    "enrich_field_map": { "fullName": ["FullName"], "chair": ["Chair"] }
   }'
 ```
 

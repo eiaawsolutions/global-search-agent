@@ -268,12 +268,25 @@ function companyIdFor(userToken) {
 // `cell.Mobile`. Member rows carry no email or company at the row level.
 // The connector's field_map (if supplied) overrides this. Nothing is
 // fabricated — a field with no source value stays empty.
+// Common API V2 field catalog per module:
+//   • Member rows carry `Account` (FK to Account module, lookup) + `Group`,
+//     `Chair`, `Chair2`, `Branch`, `MainSupportStaff`, `AccName`, `HrName`,
+//     `ReferralBy`, `ConvertFrom`, `ReportingTo`, `SignUpChair`, `Spouse`,
+//     `SecName`, `HrSubName` — every cross-module FK is a {id,display} lookup
+//     unwrapped to its display string by unwrapLookups before this pick runs.
+//   • Lead rows carry `Company` (plain string), `Branch`, `Account`,
+//     `SignUpChair`, `ReferralBy`, `ConvertFrom`, `AssignedTo`, `LastInvitation`.
+//   • Contact rows carry `Account` (FK), `ReportingTo`, `Branch`, `ReferralBy`.
+//   • Account (Company) rows carry `CompanyName1` (lookup → unwrapped display),
+//     `CompanyName2` (string), `Account` (parent FK).
+// Candidate ORDER below matches priority: the most authoritative source first.
 const FIELD_CANDIDATES = {
-  name: ['FullName', 'name2', 'name1', 'Name', 'MemberName', 'ContactName'],
-  email: ['Email', 'EmailAddress', 'Email1'],
-  phone: ['Mobile', 'Phone', 'Cell', 'ContactNo', 'PhoneNo'],
-  company: ['Company', 'CompanyName', 'Organisation', 'Organization'],
-  location: ['Location', 'Address', 'City', 'State'],
+  name: ['FullName', 'name2', 'name1', 'CompanyName1', 'Name', 'MemberName', 'ContactName'],
+  email: ['Email', 'EmailAddress', 'Email1', 'Email2'],
+  phone: ['Mobile', 'Phone', 'Cell', 'ContactNo', 'PhoneNo', 'BusinessPhone'],
+  // V2: Member.Account / Contact.Account / Lead.Company / Account.CompanyName1
+  company: ['Account', 'Company', 'CompanyName1', 'CompanyName', 'CompanyName2', 'Organisation', 'Organization'],
+  location: ['BusinessCity', 'HomeCity', 'Location', 'Address', 'City', 'State', 'BusinessState'],
 };
 
 function pick(obj, keys) {
@@ -296,9 +309,45 @@ function deEntity(s) {
     .trim();
 }
 
+// Common API V2 surfaces many cell fields as lookup objects rather than plain
+// strings — every cross-module FK and the FirstName/LastName fields look like:
+//   { "id": "GUID", "display": "Human Readable" }
+// Empty lookups use the all-zero GUID and `display: ""`. The matching engine
+// and enrichment normalizer downstream expect strings, so the adapter unwraps
+// these in-place: each lookup collapses to its `display`, with the empty GUID
+// + blank display reduced to "". Plain strings, numbers, and nested non-lookup
+// objects pass through unchanged.
+const EMPTY_GUID = '00000000-0000-0000-0000-000000000000';
+function isLookupObject(v) {
+  return (
+    v != null &&
+    typeof v === 'object' &&
+    !Array.isArray(v) &&
+    'id' in v &&
+    'display' in v
+  );
+}
+function unwrapLookups(flat) {
+  if (!flat || typeof flat !== 'object') return flat;
+  const out = {};
+  for (const [k, v] of Object.entries(flat)) {
+    if (isLookupObject(v)) {
+      const display = String(v.display || '').trim();
+      const id = String(v.id || '').toLowerCase();
+      out[k] = display || (id === EMPTY_GUID ? '' : id);
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
 function rowToCanonical(row, fieldMap) {
   // A GetList row carries an inner `cell` object plus top-level name1/name2.
-  const flat = { ...(row.cell || {}), ...row };
+  // Unwrap V2 lookup objects in `cell` BEFORE spreading row over them, so
+  // any same-named top-level scalar still wins but the cell-level lookups
+  // are flattened to strings the matcher can compare on.
+  const flat = { ...unwrapLookups(row.cell || {}), ...row };
   const out = {};
   for (const field of ['email', 'phone', 'company', 'location']) {
     const mapped = fieldMap?.[field];
@@ -539,7 +588,15 @@ export async function fetchDetail(connector, matchedRecord, _ctx = {}) {
   // The normalizer expects one flat object so its field map sees everything
   // at the same level. Keep the module hint so downstream callers can tell
   // a Member-derived detail from a Lead-derived one.
-  const flat = { ...(matchedRecord.cell || {}), ...matchedRecord };
+  //
+  // Common API V2 surfaces cross-module fields (Group / Chair / Chair2 /
+  // Account / AccName / HrName / Branch / SignUpChair / ReferralBy / etc.)
+  // and the per-row FirstName/LastName as {id, display} lookup objects.
+  // unwrapLookups collapses each to its display string before the row
+  // reaches the normalizer's `pick()`, which would otherwise coerce the
+  // object to "[object Object]". Field maps stay simple ("Group" / "Chair"
+  // / "Account"); no per-field ".display" suffix needed downstream.
+  const flat = { ...unwrapLookups(matchedRecord.cell || {}), ...matchedRecord };
   delete flat.cell;
 
   if (Object.keys(flat).length === 0) {

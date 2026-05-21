@@ -333,72 +333,116 @@ function rowToCanonical(row, fieldMap) {
 
 // ── public API (matches the generic client surface) ───────────────────
 
-// Fetch candidate records for one input query. Vistage has no targeted
-// search, so the adapter pulls the configured modules once, caches them for
-// the duration of the sweep, and lets the matching engine do the comparison.
-//
-// Concurrency: the sweep orchestrator runs N input records in parallel
-// (default CONCURRENCY=6). Without a lock, every parallel worker that
-// missed the cache fires its own GetList — and Vistage's staging server
-// chokes on that with `"An item with the same key has already been added"`
-// (a .NET dictionary collision in its response builder). We therefore keep
-// at most ONE in-flight fetch per connector: the first miss triggers the
-// pull, every other caller awaits the same promise and reads the same
-// result. This collapses N parallel calls down to 1 round-trip per module.
-const listCache = new Map(); // connectorId -> { rows, expiresAt }
-const inflightFetches = new Map(); // connectorId -> Promise<rows>
+// Map canonical criteria → the Vistage SearchField the server-side LIKE
+// filter understands. Verified empirically against the staging API:
+// `Name`, `name1`, `name2`, `MemberName` are NOT real columns (return
+// "Invalid column name"); `FullName`, `FirstName`, `LastName`, `Email`,
+// `Mobile`, `Company`, `BusinessCity`, `BusinessState`, `MemberNo` are
+// valid on the Member/Lead/Contact modules. Account uses different columns
+// (no `FullName`), so we use module-specific maps. When a criterion has no
+// usable column on a given module, we skip the query (cheaper than letting
+// the server reject it with success:false).
+const SEARCH_FIELDS_BY_MODULE = {
+  Member: {
+    name: 'FullName',
+    email: 'Email',
+    phone: 'Mobile',
+    company: 'Account',
+    location: 'BusinessCity',
+  },
+  Lead: {
+    name: 'FullName',
+    email: 'Email',
+    phone: 'Mobile',
+    company: 'Company',
+    location: 'BusinessCity',
+  },
+  Contact: {
+    name: 'FullName',
+    email: 'Email',
+    phone: 'Mobile',
+    company: 'Account',
+    location: 'BusinessCity',
+  },
+  // Account is a company-centric module — no FullName / Email / Mobile.
+  // Only company/location criteria translate. Name/email/phone are skipped.
+  Account: {
+    company: 'AccName',
+    location: 'BusinessCity',
+  },
+};
 
+// Token + UserToken caches survive across input records in a sweep so
+// auth doesn't re-handshake on every query. The connector-wide list
+// cache is GONE — we no longer pull the whole table; each input record
+// runs its own server-side SearchParams query.
+
+// Fetch candidate records for one input query. For each module configured
+// on the connector, and each selected criterion that has a usable
+// SearchField on that module, issue ONE GetList with the SearchParams set
+// to a LIKE filter on that field. Union all returned rows into a candidate
+// set; the orchestrator's matching engine then runs the strict-after-
+// normalization comparison against this much smaller, much more relevant
+// set than the old "pull-everything" approach.
+//
+// This fixes two problems the previous design had:
+//   1. GetList only returns ~1000 rows by default — older Members (Philip
+//      Law VM0468, Khou Be'ng Hooi VM0526, etc.) lived outside the window
+//      and were silently invisible to the matcher.
+//   2. Concurrent GetList calls across sweep workers raced into Vistage's
+//      response builder and triggered "An item with the same key has
+//      already been added" .NET errors. Targeted per-input queries are
+//      narrow, fast, and don't collide.
 export async function fetchCandidates(
   connector,
-  _query,
-  _criteria,
+  query,
+  criteria,
   limit = 200,
   ctx = {}
 ) {
-  const cached = listCache.get(connector.id);
-  if (cached && cached.expiresAt > Date.now()) {
-    return cached.rows.slice(0, limit);
-  }
-  // Someone else is already fetching — wait on their promise instead of
-  // racing them into Vistage.
-  const inflight = inflightFetches.get(connector.id);
-  if (inflight) return (await inflight).slice(0, limit);
-
-  // We own the fetch. Stash the promise BEFORE doing any async work so
-  // concurrent callers in this same tick see it.
-  const fetchPromise = (async () => {
-    const creds = readCredentials(connector);
-    const accessToken = await getAccessToken(connector, creds);
-    const userToken = await resolveUserToken(
-      connector,
-      creds,
-      accessToken,
-      ctx.repo
+  const creds = readCredentials(connector);
+  const accessToken = await getAccessToken(connector, creds);
+  const userToken = await resolveUserToken(
+    connector,
+    creds,
+    accessToken,
+    ctx.repo
+  );
+  const companyId = companyIdFor(userToken);
+  if (!companyId) {
+    throw new Error(
+      'Vistage UserToken is missing CompanyId — cannot build the GetList path.'
     );
-    const companyId = companyIdFor(userToken);
-    if (!companyId) {
-      throw new Error(
-        'Vistage UserToken is missing CompanyId — cannot build the GetList path.'
-      );
+  }
+
+  const meta = safeParse(connector.meta_json);
+  const modules =
+    Array.isArray(meta.modules) && meta.modules.length
+      ? meta.modules.filter((m) => VISTAGE_MODULES.includes(m))
+      : ['Member', 'Lead'];
+  const fieldMap = safeParse(connector.field_map_json);
+
+  // Per-input dedup: a row Vistage returns under name AND email
+  // SearchParams shouldn't be matched twice. Key by module + record id.
+  const byId = new Map();
+
+  for (const module of modules) {
+    const fieldsForModule = SEARCH_FIELDS_BY_MODULE[module] || {};
+
+    // Each criterion that has a non-empty value AND a usable SearchField
+    // becomes its own GetList query. We OR the results together: a row that
+    // matches ANY criterion is a candidate the matcher will evaluate.
+    const queries = [];
+    for (const criterion of criteria) {
+      const val = String(query?.[criterion] || '').trim();
+      if (!val) continue;
+      const searchField = fieldsForModule[criterion];
+      if (!searchField) continue;
+      queries.push({ criterion, searchField, val });
     }
+    if (queries.length === 0) continue;
 
-    const meta = safeParse(connector.meta_json);
-    const modules =
-      Array.isArray(meta.modules) && meta.modules.length
-        ? meta.modules.filter((m) => VISTAGE_MODULES.includes(m))
-        : ['Member', 'Lead'];
-    const fieldMap = safeParse(connector.field_map_json);
-
-    // SearchParams defaults to the V1 example — active records only
-    // (RecStatus = 2). Operators can override by setting meta.searchParams
-    // on the connector; we never hardcode it, just supply the documented
-    // default.
-    const searchParams = Array.isArray(meta.searchParams)
-      ? meta.searchParams
-      : [{ SearchField: 'RecStatus', SearchVal: '2', SearchVal2: '' }];
-
-    const rows = [];
-    for (const module of modules) {
+    for (const q of queries) {
       const resp = await postFunction(
         connector,
         creds,
@@ -408,7 +452,10 @@ export async function fetchCandidates(
           Module: module,
           PageNo: 0,
           RecordPerPage: 0,
-          SearchParams: searchParams,
+          SearchParams: [
+            { SearchField: 'RecStatus', SearchVal: '2', SearchVal2: '' },
+            { SearchField: q.searchField, SearchVal: q.val, SearchVal2: '' },
+          ],
           SortName: 'CreatedTS',
           SortOrder: 2,
           UserToken: userToken,
@@ -416,32 +463,19 @@ export async function fetchCandidates(
       );
       const list = Array.isArray(resp?.data?.rows) ? resp.data.rows : [];
       for (const r of list) {
-        rows.push({
+        const id = String(r.id || r.Id || '').toLowerCase();
+        if (!id) continue;
+        const key = `${module}:${id}`;
+        if (byId.has(key)) continue;
+        byId.set(key, {
           raw: { ...r, _vistage_module: module },
           canonical: rowToCanonical(r, fieldMap),
         });
       }
     }
-
-    // Cache for 2 minutes — long enough to serve every input record in one
-    // sweep without re-pulling, short enough to stay fresh between sweeps.
-    listCache.set(connector.id, {
-      rows,
-      expiresAt: Date.now() + 120_000,
-    });
-    return rows;
-  })();
-
-  inflightFetches.set(connector.id, fetchPromise);
-  try {
-    const rows = await fetchPromise;
-    return rows.slice(0, limit);
-  } finally {
-    // Clear the in-flight entry whether we succeeded or failed. On failure,
-    // the next caller gets a fresh try instead of being stuck awaiting a
-    // rejected promise.
-    inflightFetches.delete(connector.id);
   }
+
+  return Array.from(byId.values()).slice(0, limit);
 }
 
 // ── enrichment (GetDetail) ────────────────────────────────────────────
@@ -543,13 +577,10 @@ export async function createLead(connector, lead, ctx = {}) {
     { Module: 'Lead', data, UserToken: userToken }
   );
 
-  // The connector-scoped GetList cache (2-minute TTL) is now stale — the
-  // newly-saved row won't appear in subsequent sweeps until it expires. Bust
-  // it on every successful Save so the next sweep refetches and sees the
-  // record. Without this, the operator's "did my push actually land?" check
-  // (re-sweep the same name → expect duplicate/review) silently fails for
-  // ~2 minutes after every Add-to-lead-listing click.
-  listCache.delete(connector.id);
+  // No connector-wide list cache to bust any more: fetchCandidates now
+  // queries Vistage per-input via SearchParams, so the just-saved row
+  // shows up automatically on the next sweep without any client-side
+  // invalidation.
 
   // V1 spec shows the request shape but not the response shape; check the
   // common Claritas response keys for the new row id. If none surface, the

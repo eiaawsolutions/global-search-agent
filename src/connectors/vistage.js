@@ -336,7 +336,17 @@ function rowToCanonical(row, fieldMap) {
 // Fetch candidate records for one input query. Vistage has no targeted
 // search, so the adapter pulls the configured modules once, caches them for
 // the duration of the sweep, and lets the matching engine do the comparison.
+//
+// Concurrency: the sweep orchestrator runs N input records in parallel
+// (default CONCURRENCY=6). Without a lock, every parallel worker that
+// missed the cache fires its own GetList — and Vistage's staging server
+// chokes on that with `"An item with the same key has already been added"`
+// (a .NET dictionary collision in its response builder). We therefore keep
+// at most ONE in-flight fetch per connector: the first miss triggers the
+// pull, every other caller awaits the same promise and reads the same
+// result. This collapses N parallel calls down to 1 round-trip per module.
 const listCache = new Map(); // connectorId -> { rows, expiresAt }
+const inflightFetches = new Map(); // connectorId -> Promise<rows>
 
 export async function fetchCandidates(
   connector,
@@ -349,69 +359,89 @@ export async function fetchCandidates(
   if (cached && cached.expiresAt > Date.now()) {
     return cached.rows.slice(0, limit);
   }
+  // Someone else is already fetching — wait on their promise instead of
+  // racing them into Vistage.
+  const inflight = inflightFetches.get(connector.id);
+  if (inflight) return (await inflight).slice(0, limit);
 
-  const creds = readCredentials(connector);
-  const accessToken = await getAccessToken(connector, creds);
-  const userToken = await resolveUserToken(
-    connector,
-    creds,
-    accessToken,
-    ctx.repo
-  );
-  const companyId = companyIdFor(userToken);
-  if (!companyId) {
-    throw new Error(
-      'Vistage UserToken is missing CompanyId — cannot build the GetList path.'
-    );
-  }
-
-  const meta = safeParse(connector.meta_json);
-  const modules =
-    Array.isArray(meta.modules) && meta.modules.length
-      ? meta.modules.filter((m) => VISTAGE_MODULES.includes(m))
-      : ['Member', 'Lead'];
-  const fieldMap = safeParse(connector.field_map_json);
-
-  // SearchParams defaults to the V1 example — active records only (RecStatus
-  // = 2). Operators can override by setting meta.searchParams on the
-  // connector; we never hardcode it, just supply the documented default.
-  const searchParams = Array.isArray(meta.searchParams)
-    ? meta.searchParams
-    : [{ SearchField: 'RecStatus', SearchVal: '2', SearchVal2: '' }];
-
-  const rows = [];
-  for (const module of modules) {
-    const resp = await postFunction(
+  // We own the fetch. Stash the promise BEFORE doing any async work so
+  // concurrent callers in this same tick see it.
+  const fetchPromise = (async () => {
+    const creds = readCredentials(connector);
+    const accessToken = await getAccessToken(connector, creds);
+    const userToken = await resolveUserToken(
       connector,
       creds,
       accessToken,
-      `GetList/${companyId}`,
-      {
-        Module: module,
-        PageNo: 0,
-        RecordPerPage: 0,
-        SearchParams: searchParams,
-        SortName: 'CreatedTS',
-        SortOrder: 2,
-        UserToken: userToken,
-      }
+      ctx.repo
     );
-    const list = Array.isArray(resp?.data?.rows) ? resp.data.rows : [];
-    for (const r of list) {
-      rows.push({
-        raw: { ...r, _vistage_module: module },
-        canonical: rowToCanonical(r, fieldMap),
-      });
+    const companyId = companyIdFor(userToken);
+    if (!companyId) {
+      throw new Error(
+        'Vistage UserToken is missing CompanyId — cannot build the GetList path.'
+      );
     }
-  }
 
-  // Cache for 2 minutes — long enough to serve every input record in one
-  // sweep without re-pulling, short enough to stay fresh between sweeps.
-  listCache.set(connector.id, {
-    rows,
-    expiresAt: Date.now() + 120_000,
-  });
-  return rows.slice(0, limit);
+    const meta = safeParse(connector.meta_json);
+    const modules =
+      Array.isArray(meta.modules) && meta.modules.length
+        ? meta.modules.filter((m) => VISTAGE_MODULES.includes(m))
+        : ['Member', 'Lead'];
+    const fieldMap = safeParse(connector.field_map_json);
+
+    // SearchParams defaults to the V1 example — active records only
+    // (RecStatus = 2). Operators can override by setting meta.searchParams
+    // on the connector; we never hardcode it, just supply the documented
+    // default.
+    const searchParams = Array.isArray(meta.searchParams)
+      ? meta.searchParams
+      : [{ SearchField: 'RecStatus', SearchVal: '2', SearchVal2: '' }];
+
+    const rows = [];
+    for (const module of modules) {
+      const resp = await postFunction(
+        connector,
+        creds,
+        accessToken,
+        `GetList/${companyId}`,
+        {
+          Module: module,
+          PageNo: 0,
+          RecordPerPage: 0,
+          SearchParams: searchParams,
+          SortName: 'CreatedTS',
+          SortOrder: 2,
+          UserToken: userToken,
+        }
+      );
+      const list = Array.isArray(resp?.data?.rows) ? resp.data.rows : [];
+      for (const r of list) {
+        rows.push({
+          raw: { ...r, _vistage_module: module },
+          canonical: rowToCanonical(r, fieldMap),
+        });
+      }
+    }
+
+    // Cache for 2 minutes — long enough to serve every input record in one
+    // sweep without re-pulling, short enough to stay fresh between sweeps.
+    listCache.set(connector.id, {
+      rows,
+      expiresAt: Date.now() + 120_000,
+    });
+    return rows;
+  })();
+
+  inflightFetches.set(connector.id, fetchPromise);
+  try {
+    const rows = await fetchPromise;
+    return rows.slice(0, limit);
+  } finally {
+    // Clear the in-flight entry whether we succeeded or failed. On failure,
+    // the next caller gets a fresh try instead of being stuck awaiting a
+    // rejected promise.
+    inflightFetches.delete(connector.id);
+  }
 }
 
 // ── enrichment (GetDetail) ────────────────────────────────────────────

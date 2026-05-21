@@ -12,6 +12,7 @@ import {
 } from '../src/matching/normalize.js';
 import { jaroWinkler, levenshteinSim, tokenSortRatio } from '../src/matching/similarity.js';
 import { classifyInput, scorePair, explain } from '../src/matching/engine.js';
+import { buildCandidateResults } from '../src/sweep/orchestrator.js';
 
 // Helper: normalize a plain record into the engine's expected shape.
 const rec = (r) => {
@@ -60,6 +61,19 @@ test('exact email match → duplicate with email evidence', () => {
   const emailEvidence = verdict.matchedOn.find((m) => m.field === 'email');
   assert.ok(emailEvidence, 'email must be reported as the matching data point');
   assert.equal(emailEvidence.score, 1);
+});
+
+test('name-only search can surface all matching candidates', () => {
+  const input = rec({ name: 'Levina' });
+  const candidates = [
+    rec({ name: 'Levina Chin Lee Peng', email: 'levina@example.com' }),
+    rec({ name: 'Levina Chin', email: 'levina.chin@example.com' }),
+  ];
+  const results = buildCandidateResults(input, candidates, ['name']);
+
+  assert.equal(results.length, 2);
+  assert.deepEqual(results.map((r) => r.classification), ['review', 'review']);
+  assert.equal(results[0].matchedRecord.email, 'levina@example.com');
 });
 
 test('phone match survives a missing country code', () => {

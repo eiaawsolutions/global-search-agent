@@ -7,7 +7,7 @@
 //
 // Concurrency is bounded so a 10k-row job does not open 10k sockets at once.
 import { normalizeRecord, CRITERIA } from '../matching/normalize.js';
-import { classifyInput } from '../matching/engine.js';
+import { classifyInput, scorePair, THRESHOLDS } from '../matching/engine.js';
 import { fetchCandidates } from '../connectors/client.js';
 import { dispatchWebhook } from '../webhooks/dispatcher.js';
 
@@ -80,8 +80,59 @@ async function processRecord(connector, rawRecord, criteria, ctx) {
     };
   }
 
+  const isNameOnlyQuery =
+    Object.keys(query).length === 1 &&
+    typeof query.name === 'string' &&
+    query.name.trim() !== '';
+
+  if (isNameOnlyQuery && candidates.length > 0) {
+    return buildCandidateResults(input, candidates, criteria);
+  }
+
   const verdict = classifyInput(input, candidates, criteria);
   return { input: input.raw, ...verdict };
+}
+
+function categorizeCandidate(input, candidate, criteria) {
+  const result = scorePair(input, candidate, criteria);
+  const effectiveScore = result.strongIdMatch
+    ? Math.max(result.aggregate, THRESHOLDS.duplicate)
+    : result.aggregate;
+
+  let classification = 'new';
+  if (effectiveScore >= THRESHOLDS.duplicate) classification = 'duplicate';
+  else if (effectiveScore >= THRESHOLDS.review) classification = 'review';
+
+  if (
+    classification === 'duplicate' &&
+    !result.strongIdMatch &&
+    result.corroboratingFields < 2
+  ) {
+    classification = 'review';
+  }
+
+  if (classification === 'new') {
+    return {
+      classification,
+      score: effectiveScore,
+      matchedRecord: null,
+      matchedOn: [],
+    };
+  }
+
+  return {
+    classification,
+    score: effectiveScore,
+    matchedRecord: candidate.raw,
+    matchedOn: result.matchedOn,
+  };
+}
+
+export function buildCandidateResults(input, candidates, criteria) {
+  return candidates.map((candidate) => ({
+    input: input.raw,
+    ...categorizeCandidate(input, candidate, criteria),
+  }));
 }
 
 // Run the bounded-concurrency pool over all records.
@@ -99,7 +150,7 @@ async function runPool(items, worker) {
     next
   );
   await Promise.all(workers);
-  return results;
+  return results.flat();
 }
 
 // Execute a job. `repo` is a tenant-scoped repository, `job` the job row,

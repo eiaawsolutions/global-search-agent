@@ -563,9 +563,19 @@ export async function fetchCandidates(
         const id = String(r.id || r.Id || '').toLowerCase();
         if (!id) continue;
         const key = `${module}:${id}`;
-        if (byId.has(key)) continue;
+        if (byId.has(key)) {
+          const existing = byId.get(key);
+          existing.raw._vistage_modules = Array.from(
+            new Set([...(existing.raw._vistage_modules || []), module])
+          );
+          continue;
+        }
         byId.set(key, {
-          raw: { ...r, _vistage_module: module },
+          raw: {
+            ...r,
+            _vistage_module: module,
+            _vistage_modules: [module],
+          },
           canonical: rowToCanonical(r, fieldMap),
         });
       }

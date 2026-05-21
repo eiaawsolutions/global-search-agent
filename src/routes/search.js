@@ -33,6 +33,19 @@ const upload = multer({
 // Shape a stored result row for API output, including a human explanation.
 function publicResult(row) {
   const matchedOn = safeParse(row.matched_on_json, []);
+  const matchedRecord = row.matched_record_json
+    ? safeParse(row.matched_record_json, null)
+    : null;
+  const moduleSources = matchedRecord
+    ? Array.from(
+        new Set([
+          ...(Array.isArray(matchedRecord._vistage_modules)
+            ? matchedRecord._vistage_modules
+            : []),
+          matchedRecord._vistage_module || null,
+        ].filter(Boolean))
+      )
+    : [];
   const verdict = {
     classification: row.classification,
     matchedOn,
@@ -47,9 +60,8 @@ function publicResult(row) {
     // Per-record error — surfaces the connector-lookup failure reason or
     // the "no data on any criterion" case. NULL on a healthy result.
     error: row.error || null,
-    matched_record: row.matched_record_json
-      ? safeParse(row.matched_record_json, null)
-      : null,
+    matched_record: matchedRecord,
+    matched_modules: moduleSources,
     // The exact data points that made this a duplicate.
     matched_on: matchedOn,
     // CTA state — only meaningful for `new` results. An `error` flag means

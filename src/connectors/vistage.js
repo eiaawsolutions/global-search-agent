@@ -309,6 +309,13 @@ function deEntity(s) {
     .trim();
 }
 
+function wildcardSearchValue(raw) {
+  const value = String(raw || '').trim();
+  if (!value) return value;
+  if (value.includes('%') || value.includes('_')) return value;
+  return `%${value}%`;
+}
+
 // Common API V2 surfaces many cell fields as lookup objects rather than plain
 // strings — every cross-module FK and the FirstName/LastName fields look like:
 //   { "id": "GUID", "display": "Human Readable" }
@@ -530,7 +537,11 @@ export async function fetchCandidates(
             RecordPerPage: 0,
             SearchParams: [
               { SearchField: 'RecStatus', SearchVal: '2', SearchVal2: '' },
-              { SearchField: q.searchField, SearchVal: q.val, SearchVal2: '' },
+              {
+                SearchField: q.searchField,
+                SearchVal: wildcardSearchValue(q.val),
+                SearchVal2: '',
+              },
             ],
             SortName: 'CreatedTS',
             SortOrder: 2,

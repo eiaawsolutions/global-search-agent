@@ -82,9 +82,48 @@ function matchPhone(a, b) {
 // different companies; "KL" and "Kuala Lumpur" are different locations.
 // We never approximate — the verdict is reproducible and defensible.
 
+// Name matching, two-tier:
+//
+//   1. Exact normalized match → score 1. Same person beyond reasonable
+//      doubt for the name dimension; pairs with other criteria can promote
+//      the verdict to "duplicate".
+//   2. Partial token overlap → score in [EVIDENCE_FLOOR, REVIEW_CEILING].
+//      The input shares at least one normalized word with the candidate,
+//      but not every word matches. The candidate is surfaced for human
+//      review (operator decides between "same person, name typed
+//      differently" and "different person with a shared name token"). The
+//      score is deliberately capped BELOW the duplicate threshold so a
+//      partial-name overlap alone cannot auto-merge two records — only
+//      an exact match, OR partial-name plus a confirmed email/phone, can
+//      produce a duplicate verdict.
+//
+// REVIEW_CEILING is set just above THRESHOLDS.review × FIELD_WEIGHTS.name
+// inverted, so a name-only partial hit lands inside the review band when
+// no other field corroborates. Concretely with name weight=0.6 and the
+// 0.6 review threshold: a name-only partial scoring 0.7 yields aggregate
+// 0.7, comfortably inside review and well below duplicate.
+const REVIEW_CEILING = 0.84;
+
 function matchName(a, b) {
   if (!a.name || !b.name) return 0;
-  return a.name === b.name ? 1 : 0;
+  if (a.name === b.name) return 1;
+  // Tokenize on whitespace and any punctuation already collapsed by the
+  // name normalizer. Apostrophes/dashes are kept in normalization, so
+  // "Khou Be'ng Hooi" stays as three tokens.
+  const at = new Set(String(a.name).split(/\s+/).filter(Boolean));
+  const bt = new Set(String(b.name).split(/\s+/).filter(Boolean));
+  if (at.size === 0 || bt.size === 0) return 0;
+  let shared = 0;
+  for (const t of at) if (bt.has(t)) shared++;
+  if (shared === 0) return 0;
+  // Jaccard with a single-token-overlap floor at EVIDENCE_FLOOR so any
+  // shared token at all surfaces as evidence; ramp up with more shared
+  // tokens; cap at REVIEW_CEILING so partial overlap never crosses into
+  // auto-duplicate territory.
+  const union = new Set([...at, ...bt]).size;
+  const jaccard = shared / union;
+  const score = 0.5 + jaccard * 0.4; // 0.5..0.9 → clamped below
+  return Math.min(score, REVIEW_CEILING);
 }
 
 function matchCompany(a, b) {
@@ -230,10 +269,13 @@ export function classifyInput(input, candidates, criteria) {
 //   2. `new` with no error          → no matching record found.
 //   3. `duplicate` / `review`       → strict per-criterion match list.
 //
-// Under strict-exact matching every per-field score is binary (0 or 1, plus
-// phone's 0.97 country-core fallback) — there are no "weak signals" any
-// more. If a verdict reaches duplicate/review, matchedOn names the exact
-// fields that agreed; we never invent a phrase when the list is empty.
+// Per-field scoring is mostly binary (0 or 1, plus phone's 0.97
+// country-core fallback). Names additionally surface partial token
+// overlap with a score capped below the duplicate threshold, so a
+// shared-token name pair lands in "review" but never auto-duplicates on
+// the name alone. If a verdict reaches duplicate/review, matchedOn names
+// the exact fields that agreed; we never invent a phrase when the list
+// is empty, and "weak signals" remains banned.
 export function explain(result) {
   if (result.error) return result.error;
   if (result.classification === 'new') {

@@ -309,66 +309,88 @@ function rowToCanonical(row, fieldMap) {
     if (field === 'location' || field === 'company') val = deEntity(val);
     out[field] = val;
   }
-  // Name is handled specially. Vistage's GetList returns the name as a pair —
-  // `name1` (first whitespace token of the stored FirstName) and `name2` (the
-  // remainder). Save splits whatever we send on the first whitespace. So a
-  // lead we pushed as "chung wei ling" comes back with name1="chung",
-  // name2="wei ling". Picking either field alone loses half the name; the
-  // strict-after-normalization matcher then can't close the dedup loop.
-  // Always reconstruct from name1 + name2; fall back to FullName / Name /
-  // MemberName / ContactName / explicit field_map only when the pair is empty
-  // (older Vistage instances or non-Lead modules that surface a single field).
+  // Name resolution. Vistage stores three relevant fields per row, in
+  // priority order:
+  //   1. cell.FullName — the canonical, human-curated full name. Members and
+  //      Contacts have it; it carries the full string including extra
+  //      tokens that aren't in FirstName/LastName ("Levina Chin Lee Peng"
+  //      where FirstName=Levina LastName=Chin).
+  //   2. name1 + name2 — top-level fields the server computes from
+  //      FirstName/LastName at list time. Their ORDER varies: some rows
+  //      store FirstName in name1, others reverse it; either way they
+  //      typically only carry the FirstName+LastName tokens, never any
+  //      "middle name" portion. Used as the fallback when FullName is empty
+  //      (most freshly-pushed Leads).
+  //   3. Other single-field candidates (Name / MemberName / ContactName /
+  //      display) — rare, for non-V1 Vistage shapes.
+  // An explicit field_map.name override always wins. Picking the wrong
+  // source here is what makes the strict-after-normalization matcher miss
+  // legitimate duplicates, so the order matters.
   if (fieldMap?.name && flat[fieldMap.name] != null) {
     out.name = String(flat[fieldMap.name]);
   } else {
-    const n1 = String(flat.name1 || '').trim();
-    const n2 = String(flat.name2 || '').trim();
-    const joined = [n1, n2].filter(Boolean).join(' ');
-    out.name =
-      joined ||
-      pick(flat, ['FullName', 'Name', 'MemberName', 'ContactName', 'display']);
+    const fullName = String(flat.FullName || '').trim();
+    if (fullName) {
+      out.name = fullName;
+    } else {
+      const n1 = String(flat.name1 || '').trim();
+      const n2 = String(flat.name2 || '').trim();
+      const joined = [n1, n2].filter(Boolean).join(' ');
+      out.name =
+        joined ||
+        pick(flat, ['Name', 'MemberName', 'ContactName', 'display']);
+    }
   }
   return out;
 }
 
 // ── public API (matches the generic client surface) ───────────────────
 
-// Map canonical criteria → the Vistage SearchField the server-side LIKE
-// filter understands. Verified empirically against the staging API:
-// `Name`, `name1`, `name2`, `MemberName` are NOT real columns (return
-// "Invalid column name"); `FullName`, `FirstName`, `LastName`, `Email`,
-// `Mobile`, `Company`, `BusinessCity`, `BusinessState`, `MemberNo` are
-// valid on the Member/Lead/Contact modules. Account uses different columns
-// (no `FullName`), so we use module-specific maps. When a criterion has no
-// usable column on a given module, we skip the query (cheaper than letting
-// the server reject it with success:false).
+// Map each canonical criterion to the Vistage SearchField(s) the server-side
+// LIKE filter understands. A criterion can map to MULTIPLE fields — for
+// names especially, an input string like "Levina" or "Khou Be'ng Hooi"
+// could be stored on a row under FullName, or split between FirstName and
+// LastName, or carried as a member code (MemberNo). We fan out, querying
+// every candidate field, and union the results — a row that appears under
+// any field becomes a candidate the matcher then evaluates.
+//
+// Verified empirically against the V1 staging API:
+//   • Valid SearchFields: FullName, FirstName, LastName, Email, Mobile,
+//     Company, BusinessCity, BusinessState, MemberNo.
+//   • NOT real columns (return "Invalid column name"): Name, name1, name2,
+//     MemberName.
+//   • Account module is company-centric — no FullName/Email/Mobile; uses
+//     AccName.
+// When a criterion has no usable column on a given module, we skip the
+// query entirely (cheaper than letting the server reject it with
+// success:false on every call).
 const SEARCH_FIELDS_BY_MODULE = {
   Member: {
-    name: 'FullName',
-    email: 'Email',
-    phone: 'Mobile',
-    company: 'Account',
-    location: 'BusinessCity',
+    name: ['FullName', 'FirstName', 'LastName', 'MemberNo'],
+    email: ['Email'],
+    phone: ['Mobile'],
+    company: ['Account'],
+    location: ['BusinessCity'],
   },
   Lead: {
-    name: 'FullName',
-    email: 'Email',
-    phone: 'Mobile',
-    company: 'Company',
-    location: 'BusinessCity',
+    name: ['FullName', 'FirstName', 'LastName'],
+    email: ['Email'],
+    phone: ['Mobile'],
+    company: ['Company'],
+    location: ['BusinessCity'],
   },
   Contact: {
-    name: 'FullName',
-    email: 'Email',
-    phone: 'Mobile',
-    company: 'Account',
-    location: 'BusinessCity',
+    name: ['FullName', 'FirstName', 'LastName'],
+    email: ['Email'],
+    phone: ['Mobile'],
+    company: ['Account'],
+    location: ['BusinessCity'],
   },
   // Account is a company-centric module — no FullName / Email / Mobile.
   // Only company/location criteria translate. Name/email/phone are skipped.
   Account: {
-    company: 'AccName',
-    location: 'BusinessCity',
+    company: ['AccName'],
+    location: ['BusinessCity'],
   },
 };
 
@@ -429,38 +451,53 @@ export async function fetchCandidates(
   for (const module of modules) {
     const fieldsForModule = SEARCH_FIELDS_BY_MODULE[module] || {};
 
-    // Each criterion that has a non-empty value AND a usable SearchField
-    // becomes its own GetList query. We OR the results together: a row that
-    // matches ANY criterion is a candidate the matcher will evaluate.
+    // Each criterion that has a non-empty value AND at least one usable
+    // SearchField becomes one OR MORE GetList queries — one per field we
+    // fan out across. We OR the results together: a row that matches ANY
+    // (criterion, field) pair is a candidate the matcher will evaluate.
     const queries = [];
     for (const criterion of criteria) {
       const val = String(query?.[criterion] || '').trim();
       if (!val) continue;
-      const searchField = fieldsForModule[criterion];
-      if (!searchField) continue;
-      queries.push({ criterion, searchField, val });
+      const fields = fieldsForModule[criterion];
+      if (!fields || fields.length === 0) continue;
+      for (const searchField of fields) {
+        queries.push({ criterion, searchField, val });
+      }
     }
     if (queries.length === 0) continue;
 
     for (const q of queries) {
-      const resp = await postFunction(
-        connector,
-        creds,
-        accessToken,
-        `GetList/${companyId}`,
-        {
-          Module: module,
-          PageNo: 0,
-          RecordPerPage: 0,
-          SearchParams: [
-            { SearchField: 'RecStatus', SearchVal: '2', SearchVal2: '' },
-            { SearchField: q.searchField, SearchVal: q.val, SearchVal2: '' },
-          ],
-          SortName: 'CreatedTS',
-          SortOrder: 2,
-          UserToken: userToken,
-        }
-      );
+      let resp;
+      try {
+        resp = await postFunction(
+          connector,
+          creds,
+          accessToken,
+          `GetList/${companyId}`,
+          {
+            Module: module,
+            PageNo: 0,
+            RecordPerPage: 0,
+            SearchParams: [
+              { SearchField: 'RecStatus', SearchVal: '2', SearchVal2: '' },
+              { SearchField: q.searchField, SearchVal: q.val, SearchVal2: '' },
+            ],
+            SortName: 'CreatedTS',
+            SortOrder: 2,
+            UserToken: userToken,
+          }
+        );
+      } catch (err) {
+        // Vistage rejects some fields per module with "Invalid column name"
+        // (we map module fields conservatively to avoid this, but the API
+        // surface differs by tenant). Treat such errors as "this field
+        // isn't available here" and continue with the rest of the fan-out
+        // — a single dud field shouldn't blow up the whole lookup. Any
+        // other error (auth, timeout, server fault) propagates as before.
+        if (/Invalid column name/i.test(err.message)) continue;
+        throw err;
+      }
       const list = Array.isArray(resp?.data?.rows) ? resp.data.rows : [];
       for (const r of list) {
         const id = String(r.id || r.Id || '').toLowerCase();

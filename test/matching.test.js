@@ -94,21 +94,28 @@ test('name matching does NOT match on letter-level overlap', () => {
   assert.equal(verdict.score, 0);
 });
 
-test('name matching is order-sensitive — reversed words do NOT match', () => {
-  // "Jane Doe" and "Doe Jane" are treated as different names. Exact + ordered.
+test('name matching: reversed tokens still surface for human review', () => {
+  // "Jane Doe" and "Doe Jane" share both tokens — almost certainly the
+  // same person typed differently. The matcher surfaces this for human
+  // review but never auto-merges (only exact match + a strong identifier
+  // can promote to duplicate). The aggregate stays below the duplicate
+  // threshold by design — partial-name evidence is capped.
   const input = rec({ name: 'Jane Doe' });
   const candidates = [rec({ name: 'Doe Jane' })];
   const verdict = classifyInput(input, candidates, ['name']);
-  assert.equal(verdict.classification, 'new');
+  assert.equal(verdict.classification, 'review');
+  assert.ok(verdict.score < 0.85, 'partial name overlap must not auto-duplicate');
 });
 
-test('a partial name is NOT a match — every word must be present', () => {
-  // "John Smith" vs "John Michael Smith" — the middle name makes them
-  // different records. No subset/containment matching for names.
+test('a partial name (extra middle name) surfaces for review, never auto-duplicate', () => {
+  // "John Smith" vs "John Michael Smith" — operator decides whether the
+  // middle name means the same person or a different one. Either way we
+  // surface the candidate; we do not silently drop it.
   const input = rec({ name: 'John Smith' });
   const candidates = [rec({ name: 'John Michael Smith' })];
   const verdict = classifyInput(input, candidates, ['name']);
-  assert.equal(verdict.classification, 'new');
+  assert.equal(verdict.classification, 'review');
+  assert.ok(verdict.score < 0.85, 'partial name overlap must not auto-duplicate');
 });
 
 test('an identical name (one field, no corroboration) lands in REVIEW', () => {
